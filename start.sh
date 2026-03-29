@@ -32,7 +32,6 @@ fi
 
 cd "$PROJECT_DIR"
 
-export NODE_ENV=production
 export PORT
 
 echo "==> Project: $PROJECT_DIR"
@@ -41,10 +40,11 @@ echo "==> Port: $PORT"
 
 if [ "$SKIP_INSTALL" != "1" ]; then
   echo "==> Installing dependencies"
-  "$YARN_BIN" install --frozen-lockfile
+  "$YARN_BIN" install --frozen-lockfile --production=false
 fi
 
 echo "==> Building project"
+export NODE_ENV=production
 "$YARN_BIN" build
 
 if "$PM2_BIN" describe "$APP_NAME" >/dev/null 2>&1; then
