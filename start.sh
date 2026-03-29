@@ -2,7 +2,15 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+if [ -f "$SCRIPT_DIR/package.json" ]; then
+  PROJECT_DIR="$SCRIPT_DIR"
+elif [ -f "$SCRIPT_DIR/../package.json" ]; then
+  PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+else
+  echo "Error: could not locate package.json relative to $0"
+  exit 1
+fi
 
 APP_NAME="${APP_NAME:-pixel-websale}"
 PORT="${PORT:-3000}"
