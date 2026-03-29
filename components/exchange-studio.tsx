@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { useUiPreferences } from "@/components/ui-preferences-provider";
 import { resolveLocale } from "@/lib/ui-language";
@@ -90,6 +90,12 @@ type TaskStatusResponse = {
 };
 
 type TaskLookupResponse = {
+  generated_at?: string;
+  tasks: QueueTask[];
+};
+
+type TaskStreamResponse = {
+  generated_at?: string;
   tasks: QueueTask[];
 };
 
@@ -424,6 +430,23 @@ function isGmailAddress(value: string) {
   return /^[^@\s]+@gmail\.com$/i.test(value.trim());
 }
 
+function buildTaskDetailSyncKey(task?: QueueTask | null) {
+  if (!task) {
+    return "";
+  }
+
+  return [
+    task.id,
+    task.status,
+    task.cdk_charge_status || "",
+    task.cdk_charged_at || "",
+    task.finished_at || "",
+    task.updated_at || "",
+    task.success_message || "",
+    task.error_message || "",
+  ].join("|");
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -462,6 +485,7 @@ export function ExchangeStudio() {
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [currentTaskPage, setCurrentTaskPage] = useState(1);
   const [copyFeedback, setCopyFeedback] = useState<"copied" | "failed" | null>(null);
+  const taskDetailSyncKeyRef = useRef("");
   const [isPending, startTransition] = useTransition();
   const isChinese = language === "zh";
   const copy = isChinese ? LANGUAGE_COPY.zh : LANGUAGE_COPY.en;
@@ -601,53 +625,68 @@ export function ExchangeStudio() {
     };
   }, [copy.cdkAutoFailed, hasLoadedStoredCode, normalizedCode]);
 
-  useEffect(() => {
-    if (
-      !taskList.some(
+  const hasStreamingTasks = useMemo(
+    () =>
+      taskList.some(
         (item) =>
           item.status === "queued" || item.status === "running" || item.cdk_charge_status === "pending"
-      )
-    ) {
+      ),
+    [taskList]
+  );
+  const taskStreamKey = useMemo(
+    () =>
+      taskList
+        .map((item) => item.id)
+        .filter((taskId) => Number.isFinite(taskId) && taskId > 0)
+        .join(","),
+    [taskList]
+  );
+
+  useEffect(() => {
+    if (!hasStreamingTasks || !taskStreamKey) {
       return;
     }
 
     let cancelled = false;
-    const loadTask = async () => {
+    const eventSource = new EventSource(
+      `/api/tasks/stream?${new URLSearchParams(
+        taskStreamKey.split(",").map((taskId) => ["task_id", taskId])
+      ).toString()}`
+    );
+
+    const syncActiveTaskDetail = async (refreshedTasks: QueueTask[]) => {
+      const activeTaskId =
+        selectedTaskId !== null && refreshedTasks.some((item) => item.id === selectedTaskId)
+          ? selectedTaskId
+          : (refreshedTasks[0]?.id ?? null);
+
+      if (activeTaskId !== null && activeTaskId !== selectedTaskId) {
+        setSelectedTaskId(activeTaskId);
+      }
+
+      const activeTask =
+        activeTaskId !== null
+          ? refreshedTasks.find((item) => item.id === activeTaskId) || null
+          : null;
+      const nextSyncKey = buildTaskDetailSyncKey(activeTask);
+      if (!activeTask || nextSyncKey === taskDetailSyncKeyRef.current) {
+        return;
+      }
+
+      taskDetailSyncKeyRef.current = nextSyncKey;
+
       try {
-        const lookupPayload = await request<TaskLookupResponse>("/api/tasks/lookup", {
-          method: "POST",
-          body: JSON.stringify({
-            task_ids: taskList.map((item) => item.id),
-          }),
-        });
+        const payload = await request<TaskStatusResponse>(`/api/tasks/${activeTaskId}`);
         if (cancelled) {
           return;
         }
-
-        const refreshedTasks = lookupPayload.tasks;
-        setTaskList(refreshedTasks);
-
-        const activeTaskId =
-          selectedTaskId !== null && refreshedTasks.some((item) => item.id === selectedTaskId)
-            ? selectedTaskId
-            : (refreshedTasks[0]?.id ?? null);
-
-        if (activeTaskId !== null && activeTaskId !== selectedTaskId) {
-          setSelectedTaskId(activeTaskId);
+        setTaskList((currentTasks) =>
+          currentTasks.map((item) => (item.id === payload.task.id ? payload.task : item))
+        );
+        if (payload.detail) {
+          setDetail(payload.detail);
         }
-
-        if (activeTaskId !== null) {
-          const payload = await request<TaskStatusResponse>(`/api/tasks/${activeTaskId}`);
-          if (cancelled) {
-            return;
-          }
-          setTaskList((currentTasks) =>
-            currentTasks.map((item) => (item.id === payload.task.id ? payload.task : item))
-          );
-          if (payload.detail) {
-            setDetail(payload.detail);
-          }
-        }
+        setError(null);
       } catch (nextError) {
         if (cancelled) {
           return;
@@ -656,17 +695,34 @@ export function ExchangeStudio() {
       }
     };
 
-    const timer = window.setInterval(() => {
-      void loadTask();
-    }, 8000);
+    eventSource.onmessage = (event) => {
+      if (cancelled) {
+        return;
+      }
 
-    void loadTask();
+      try {
+        const payload = JSON.parse(event.data) as TaskStreamResponse;
+        const refreshedTasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+        setTaskList(refreshedTasks);
+        setError(null);
+        void syncActiveTaskDetail(refreshedTasks);
+      } catch {
+        setError(copy.taskRefreshFailed);
+      }
+    };
+
+    eventSource.onerror = () => {
+      if (cancelled) {
+        return;
+      }
+      // Let EventSource reconnect automatically.
+    };
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      eventSource.close();
     };
-  }, [copy.taskRefreshFailed, selectedTaskId, taskList]);
+  }, [copy.taskRefreshFailed, hasStreamingTasks, selectedTaskId, taskStreamKey]);
 
   useEffect(() => {
     if (!copyFeedback) {

@@ -763,6 +763,38 @@ export async function fetchQueuedTasks(taskIds: number[]) {
   };
 }
 
+export async function openQueuedTaskStream(taskIds: number[], signal?: AbortSignal) {
+  const normalizedTaskIds = taskIds.filter((taskId) => Number.isFinite(taskId) && taskId > 0);
+  if (!normalizedTaskIds.length) {
+    throw new WebSaleApiError(400, "At least one task id is required.");
+  }
+
+  const response = await fetch(
+    await backendUrl(`/api/tasks/stream?task_ids=${encodeURIComponent(normalizedTaskIds.join(","))}`),
+    {
+      method: "GET",
+      headers: {
+        [BACKEND_ADMIN_PASSWORD_HEADER]: await resolveBackendAdminPassword(),
+        Accept: "text/event-stream",
+      },
+      cache: "no-store",
+      signal,
+    }
+  );
+
+  if (!response.ok) {
+    const payload = await responsePayload(response);
+    const statusCode = response.status < 500 ? response.status : 502;
+    throw new WebSaleApiError(statusCode, responseErrorDetail(payload, response.status));
+  }
+
+  if (!response.body) {
+    throw new WebSaleApiError(502, "Backend task stream returned an empty body.");
+  }
+
+  return response;
+}
+
 export async function queueExchangeTask({
   code,
   runMode,
