@@ -121,12 +121,11 @@ type OverviewActivityCell = {
 type RunModeAvailability = Record<RunMode, boolean>;
 
 const BACKEND_API_BASE_URL_ENV = "PIXEL_WEBSALE_API_BASE_URL";
+const BACKEND_API_PASSWORD_ENV = "PIXEL_WEBSALE_API_PASSWORD";
 const DEFAULT_BACKEND_API_BASE_URL = "http://127.0.0.1:8006";
 const BACKEND_API_TIMEOUT_ENV = "PIXEL_WEBSALE_API_TIMEOUT";
 const DEFAULT_BACKEND_API_TIMEOUT_MS = 15_000;
 const SITE_TITLE_ENV = "PIXEL_WEBSALE_SITE_TITLE";
-const SHARED_ADMIN_PASSWORD_ENV = "PIXEL_ADMIN_PASSWORD";
-const LEGACY_ADMIN_PASSWORD_ENV = "PIXEL_WEBSALE_ADMIN_PASSWORD";
 const DEFAULT_ADMIN_PASSWORD = "123456";
 const BACKEND_ADMIN_PASSWORD_HEADER = "x-pixel-admin-password";
 const DEFAULT_SITE_TITLE = "Pixel CDK Exchange";
@@ -208,11 +207,7 @@ function resolveBackendApiTimeoutMs() {
 }
 
 function resolveDefaultBackendAdminPassword() {
-  return (
-    readServerEnv(SHARED_ADMIN_PASSWORD_ENV) ||
-    readServerEnv(LEGACY_ADMIN_PASSWORD_ENV) ||
-    DEFAULT_ADMIN_PASSWORD
-  );
+  return readServerEnv(BACKEND_API_PASSWORD_ENV) || DEFAULT_ADMIN_PASSWORD;
 }
 
 async function resolveBackendAdminPassword() {

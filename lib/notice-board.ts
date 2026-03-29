@@ -8,7 +8,6 @@ import { readServerEnv } from "@/lib/server-env";
 
 export const ADMIN_NOTICE_COOKIE_NAME = "pixel_websale_admin_notice";
 export const ADMIN_NOTICE_PASSWORD_ENV = "PIXEL_WEBSALE_ADMIN_PASSWORD";
-export const SHARED_ADMIN_PASSWORD_ENV = "PIXEL_ADMIN_PASSWORD";
 export const DEFAULT_ADMIN_NOTICE_PASSWORD = "123456";
 export const ADMIN_NOTICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
 
@@ -90,11 +89,7 @@ export function buildNoticeMarkdownDigest(markdown: string) {
 }
 
 export function resolveAdminNoticePassword() {
-  return (
-    readServerEnv(SHARED_ADMIN_PASSWORD_ENV) ||
-    readServerEnv(ADMIN_NOTICE_PASSWORD_ENV) ||
-    DEFAULT_ADMIN_NOTICE_PASSWORD
-  );
+  return readServerEnv(ADMIN_NOTICE_PASSWORD_ENV) || DEFAULT_ADMIN_NOTICE_PASSWORD;
 }
 
 export function getAdminNoticeSessionValue() {

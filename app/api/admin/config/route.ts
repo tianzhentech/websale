@@ -15,9 +15,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const BACKEND_API_BASE_URL_ENV = "PIXEL_WEBSALE_API_BASE_URL";
+const BACKEND_API_PASSWORD_ENV = "PIXEL_WEBSALE_API_PASSWORD";
 const DEFAULT_BACKEND_API_BASE_URL = "http://127.0.0.1:8006";
-const SHARED_ADMIN_PASSWORD_ENV = "PIXEL_ADMIN_PASSWORD";
-const LEGACY_ADMIN_PASSWORD_ENV = "PIXEL_WEBSALE_ADMIN_PASSWORD";
 const DEFAULT_ADMIN_PASSWORD = "123456";
 
 type AdminConfigPayload = {
@@ -43,11 +42,7 @@ function resolveDefaultBackendApiBaseUrl() {
 }
 
 function resolveDefaultBackendApiPassword() {
-  return (
-    readServerEnv(SHARED_ADMIN_PASSWORD_ENV) ||
-    readServerEnv(LEGACY_ADMIN_PASSWORD_ENV) ||
-    DEFAULT_ADMIN_PASSWORD
-  );
+  return readServerEnv(BACKEND_API_PASSWORD_ENV) || DEFAULT_ADMIN_PASSWORD;
 }
 
 async function buildResponsePayload() {
