@@ -1,6 +1,16 @@
 import "server-only";
 
 import { readServerEnv } from "@/lib/server-env";
+import {
+  formatNormalizedAccountRecord,
+  normalizeGmail,
+  normalizePassword,
+  normalizeTwofaSecret,
+  splitBulkAccountInputLines,
+  validateBulkAccountLine,
+  type InvalidBulkAccountLine,
+  type NormalizedAccountRecord,
+} from "@/lib/account-format";
 
 type JsonObject = Record<string, unknown>;
 
@@ -15,16 +25,12 @@ type ModelAccountRecord = {
   otpauth?: unknown;
 };
 
-type NormalizedAccountRecord = {
-  gmail: string;
-  password: string;
-  twofaSecret: string;
-};
-
 export type FormatConverterResult = {
   normalizedLines: string[];
   normalizedText: string;
-  rawResponse: string;
+  rawResponse: string[];
+  invalidLines: Array<InvalidBulkAccountLine>;
+  validLineCount: number;
 };
 
 const FORMATTER_API_BASE_URL_ENV = "PIXEL_WEBSALE_FORMATTER_API_BASE_URL";
@@ -35,6 +41,7 @@ const TRANSLATION_API_KEY_ENV = "PIXEL_WEBSALE_TRANSLATION_API_KEY";
 const TRANSLATION_MODEL_ENV = "PIXEL_WEBSALE_TRANSLATION_MODEL";
 const DEFAULT_API_BASE_URL = "https://api.zectai.com";
 const DEFAULT_MODEL = "gpt-5.2";
+const DEFAULT_FORMATTER_CONCURRENCY = 8;
 
 export const MAX_FORMAT_CONVERTER_INPUT_LENGTH = 20_000;
 
@@ -68,16 +75,20 @@ function resolveFormatterConfig() {
   };
 }
 
-function buildFormatConverterMessages(source: string) {
+function buildFormatConverterMessages(source: string, retryReason?: string) {
+  const retryNote = retryReason
+    ? `\n\nThe previous attempt was rejected by deterministic validation because: ${retryReason}. Return a corrected JSON object.`
+    : "";
+
   return [
     {
       role: "system",
       content:
-        "You normalize noisy account data for an operations dashboard. Return JSON only, without markdown fences or explanations. The schema must be {\"accounts\":[{\"gmail\":\"string\",\"password\":\"string\",\"twofa_secret\":\"string\"}]}. Rules: extract every Gmail account you can identify; ignore non-Gmail emails; pair the closest password and 2FA secret with the correct Gmail; preserve passwords exactly except trimming outer whitespace; if a TOTP otpauth URL is present, return only its secret value; if password or 2FA secret is missing, return an empty string; do not invent values; deduplicate identical records.",
+        "You normalize one noisy account line for an operations dashboard. Return JSON only, without markdown fences or explanations. The schema must be {\"gmail\":\"string\",\"password\":\"string\",\"twofa_secret\":\"string\"}. Rules: extract at most one Gmail account from this single line; ignore non-Gmail emails; preserve passwords exactly except trimming outer whitespace; if a TOTP otpauth URL is present, return only its secret value; if any field is missing, use an empty string; do not invent values.",
     },
     {
       role: "user",
-      content: source,
+      content: `Normalize this single account line:\n${source}${retryNote}`,
     },
   ];
 }
@@ -118,61 +129,6 @@ function asText(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-function stripOuterQuotes(value: string) {
-  const trimmed = value.trim();
-  if (
-    trimmed.length >= 2 &&
-    ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) ||
-      (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-      (trimmed.startsWith("`") && trimmed.endsWith("`")))
-  ) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-}
-
-function normalizeGmail(value: string) {
-  const match = stripOuterQuotes(value).match(/[A-Z0-9._%+-]+@gmail\.com/gi);
-  return match?.[0]?.toLowerCase() || "";
-}
-
-function normalizePassword(value: string) {
-  return stripOuterQuotes(value);
-}
-
-function extractSecretFromOtpauthUrl(value: string) {
-  const secretMatch = value.match(/[?&]secret=([^&]+)/i);
-  if (!secretMatch?.[1]) {
-    return "";
-  }
-
-  try {
-    return decodeURIComponent(secretMatch[1]);
-  } catch {
-    return secretMatch[1];
-  }
-}
-
-function normalizeTwofaSecret(value: string) {
-  const trimmed = stripOuterQuotes(value);
-  if (!trimmed) {
-    return "";
-  }
-
-  const fromUrl =
-    trimmed.includes("otpauth://") || trimmed.includes("secret=")
-      ? extractSecretFromOtpauthUrl(trimmed)
-      : "";
-  const candidate = stripOuterQuotes(fromUrl || trimmed);
-  const compact = candidate.replace(/[\s-]+/g, "");
-
-  if (/^[A-Z2-7]+=*$/i.test(compact)) {
-    return compact.toUpperCase();
-  }
-
-  return candidate;
-}
-
 function parseJsonPayload(text: string) {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -201,23 +157,6 @@ function parseJsonPayload(text: string) {
   }
 }
 
-function parseModelAccountRecords(payload: unknown): ModelAccountRecord[] {
-  if (Array.isArray(payload)) {
-    return payload.filter(isRecord);
-  }
-
-  if (!isRecord(payload)) {
-    return [];
-  }
-
-  const accounts = payload.accounts;
-  if (!Array.isArray(accounts)) {
-    return [];
-  }
-
-  return accounts.filter(isRecord);
-}
-
 function normalizeAccountRecord(record: ModelAccountRecord): NormalizedAccountRecord | null {
   const gmail = normalizeGmail(asText(record.gmail || record.email));
   if (!gmail) {
@@ -239,85 +178,94 @@ function normalizeAccountRecord(record: ModelAccountRecord): NormalizedAccountRe
   };
 }
 
-function cleanLine(line: string) {
-  return line
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .replace(/^\d+[\).\s-]+/, "")
-    .replace(/^[-*]\s+/, "")
-    .trim();
-}
-
-function parseLineBasedRecords(text: string): NormalizedAccountRecord[] {
-  const records: NormalizedAccountRecord[] = [];
-
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = cleanLine(rawLine);
-    if (!line) {
-      continue;
-    }
-
-    const parts = line.split(/\s*---\s*/);
-    if (parts.length < 3) {
-      continue;
-    }
-
-    const gmail = normalizeGmail(parts[0] || "");
-    if (!gmail) {
-      continue;
-    }
-
-    records.push({
-      gmail,
-      password: normalizePassword(parts[1] || ""),
-      twofaSecret: normalizeTwofaSecret(parts.slice(2).join("---")),
-    });
+function parseSingleModelAccountRecord(payload: unknown): ModelAccountRecord | null {
+  if (Array.isArray(payload)) {
+    return (payload.find(isRecord) as ModelAccountRecord | undefined) || null;
   }
 
-  return records;
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  const accounts = payload.accounts;
+  if (Array.isArray(accounts)) {
+    return (accounts.find(isRecord) as ModelAccountRecord | undefined) || null;
+  }
+
+  return payload as ModelAccountRecord;
 }
 
-function dedupeRecords(records: NormalizedAccountRecord[]) {
-  const unique = new Map<string, NormalizedAccountRecord>();
+function normalizeRecordToLine(record: ModelAccountRecord | null) {
+  const normalized = record ? normalizeAccountRecord(record) : null;
+  return normalized ? formatNormalizedAccountRecord(normalized) : "";
+}
 
-  for (const record of records) {
-    const key = `${record.gmail}\u0000${record.password}\u0000${record.twofaSecret}`;
-    if (!unique.has(key)) {
-      unique.set(key, record);
+function resolveIssueReason(code: InvalidBulkAccountLine["code"]) {
+  switch (code) {
+    case "missing_separator":
+      return "the output must use Gmail---Password---2faSecret";
+    case "missing_gmail":
+      return "gmail is missing";
+    case "invalid_gmail":
+      return "gmail must be a valid @gmail.com address";
+    case "missing_password":
+      return "password is missing";
+    case "missing_twofa":
+      return "2FA secret is missing";
+    case "invalid_twofa":
+      return "2FA secret is invalid";
+    default:
+      return "the output did not pass validation";
+  }
+}
+
+function resolveFormatterConcurrency() {
+  const value = Number(process.env.PIXEL_WEBSALE_FORMATTER_CONCURRENCY || "");
+  if (!Number.isFinite(value) || value <= 0) {
+    return DEFAULT_FORMATTER_CONCURRENCY;
+  }
+  return Math.min(32, Math.max(1, Math.trunc(value)));
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>
+) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+
+  async function runWorker() {
+    while (cursor < items.length) {
+      const currentIndex = cursor;
+      cursor += 1;
+      results[currentIndex] = await worker(items[currentIndex]);
     }
   }
 
-  return [...unique.values()];
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker())
+  );
+
+  return results;
 }
 
-function formatNormalizedLine(record: NormalizedAccountRecord) {
-  return `${record.gmail}---${record.password}---${record.twofaSecret}`;
-}
-
-export async function convertAccountFormat(source: string): Promise<FormatConverterResult> {
-  const trimmedSource = source.trim();
-  if (!trimmedSource) {
-    return {
-      normalizedLines: [],
-      normalizedText: "",
-      rawResponse: "",
-    };
-  }
-
-  const { apiKey, baseUrl, model } = resolveFormatterConfig();
-  const upstream = await fetch(`${baseUrl}/v1/chat/completions`, {
+async function convertSingleLineThroughLlm(
+  source: string,
+  config: ReturnType<typeof resolveFormatterConfig>,
+  retryReason?: string
+) {
+  const upstream = await fetch(`${config.baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model,
+      model: config.model,
       temperature: 0,
       stream: false,
-      messages: buildFormatConverterMessages(trimmedSource),
+      messages: buildFormatConverterMessages(source, retryReason),
     }),
     cache: "no-store",
   });
@@ -330,25 +278,125 @@ export async function convertAccountFormat(source: string): Promise<FormatConver
   const rawResponse = parseFullCompletionResponse(payload).trim();
   if (!rawResponse) {
     return {
-      normalizedLines: [],
-      normalizedText: "",
+      normalizedLine: "",
       rawResponse: "",
     };
   }
 
   const parsedPayload = parseJsonPayload(rawResponse);
-  const normalizedRecords = dedupeRecords(
-    parseModelAccountRecords(parsedPayload)
-      .map(normalizeAccountRecord)
-      .filter((record): record is NormalizedAccountRecord => record !== null)
+  const fallbackValidation = validateBulkAccountLine(rawResponse, 1);
+  const normalizedLine =
+    normalizeRecordToLine(parseSingleModelAccountRecord(parsedPayload)) ||
+    (fallbackValidation.ok ? fallbackValidation.formatted : "");
+
+  return {
+    normalizedLine,
+    rawResponse,
+  };
+}
+
+async function convertSingleInputLine(
+  sourceLine: { lineNumber: number; raw: string; trimmed: string },
+  config: ReturnType<typeof resolveFormatterConfig>
+) {
+  const initialValidation = validateBulkAccountLine(sourceLine.trimmed, sourceLine.lineNumber);
+  if (initialValidation.ok) {
+    return {
+      lineNumber: sourceLine.lineNumber,
+      outputLine: initialValidation.formatted,
+      valid: true,
+      rawResponses: [] as string[],
+      invalidLine: null as InvalidBulkAccountLine | null,
+    };
+  }
+
+  const firstAttempt = await convertSingleLineThroughLlm(sourceLine.trimmed, config);
+  const firstValidation = firstAttempt.normalizedLine
+    ? validateBulkAccountLine(firstAttempt.normalizedLine, sourceLine.lineNumber)
+    : {
+        ok: false,
+        code: initialValidation.code,
+        lineNumber: sourceLine.lineNumber,
+        raw: sourceLine.trimmed,
+      } satisfies InvalidBulkAccountLine;
+
+  if (firstValidation.ok) {
+    return {
+      lineNumber: sourceLine.lineNumber,
+      outputLine: firstValidation.formatted,
+      valid: true,
+      rawResponses: firstAttempt.rawResponse ? [firstAttempt.rawResponse] : [],
+      invalidLine: null as InvalidBulkAccountLine | null,
+    };
+  }
+
+  const secondAttempt = await convertSingleLineThroughLlm(
+    sourceLine.trimmed,
+    config,
+    resolveIssueReason(firstValidation.code)
   );
-  const fallbackRecords =
-    normalizedRecords.length > 0 ? normalizedRecords : dedupeRecords(parseLineBasedRecords(rawResponse));
-  const normalizedLines = fallbackRecords.map(formatNormalizedLine);
+  const secondValidation = secondAttempt.normalizedLine
+    ? validateBulkAccountLine(secondAttempt.normalizedLine, sourceLine.lineNumber)
+    : firstValidation;
+
+  if (secondValidation.ok) {
+    return {
+      lineNumber: sourceLine.lineNumber,
+      outputLine: secondValidation.formatted,
+      valid: true,
+      rawResponses: [firstAttempt.rawResponse, secondAttempt.rawResponse].filter(Boolean),
+      invalidLine: null as InvalidBulkAccountLine | null,
+    };
+  }
+
+  return {
+    lineNumber: sourceLine.lineNumber,
+    outputLine: sourceLine.trimmed,
+    valid: false,
+    rawResponses: [firstAttempt.rawResponse, secondAttempt.rawResponse].filter(Boolean),
+    invalidLine: secondValidation,
+  };
+}
+
+export async function convertAccountFormat(source: string): Promise<FormatConverterResult> {
+  const inputLines = splitBulkAccountInputLines(source);
+  const nonEmptyLines = inputLines.filter((line) => !line.isEmpty);
+
+  if (!nonEmptyLines.length) {
+    return {
+      normalizedLines: [],
+      normalizedText: "",
+      rawResponse: [],
+      invalidLines: [],
+      validLineCount: 0,
+    };
+  }
+
+  const config = resolveFormatterConfig();
+  const convertedLines = await mapWithConcurrency(
+    nonEmptyLines,
+    resolveFormatterConcurrency(),
+    (line) => convertSingleInputLine(line, config)
+  );
+  const convertedByLineNumber = new Map(
+    convertedLines.map((line) => [line.lineNumber, line] as const)
+  );
+
+  const normalizedLines = inputLines.map((line) => {
+    if (line.isEmpty) {
+      return "";
+    }
+    return convertedByLineNumber.get(line.lineNumber)?.outputLine || line.trimmed;
+  });
+  const invalidLines = convertedLines
+    .map((line) => line.invalidLine)
+    .filter((line): line is InvalidBulkAccountLine => Boolean(line));
 
   return {
     normalizedLines,
     normalizedText: normalizedLines.join("\n"),
-    rawResponse,
+    rawResponse: convertedLines.flatMap((line) => line.rawResponses),
+    invalidLines,
+    validLineCount: convertedLines.filter((line) => line.valid).length,
   };
 }

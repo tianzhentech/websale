@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
+import {
+  isGmailAddress,
+  validateBulkAccountText,
+  type AccountFormatIssueCode,
+} from "@/lib/account-format";
 import { useUiPreferences } from "@/components/ui-preferences-provider";
 import { resolveLocale } from "@/lib/ui-language";
 
@@ -110,6 +115,12 @@ type FormatConvertResponse = {
   normalizedLines: string[];
   normalizedText: string;
   lineCount: number;
+  validLineCount: number;
+  invalidLines: Array<{
+    lineNumber: number;
+    code: AccountFormatIssueCode;
+  }>;
+  allValid: boolean;
 };
 
 const CDK_STORAGE_KEY = "pixel-websale-cdk-code";
@@ -157,8 +168,10 @@ const LANGUAGE_COPY = {
     bulkFormat: "格式转换",
     bulkFormatting: "转换中...",
     bulkFormatApplied: "已转换并写回 {count} 条账号。",
+    bulkFormatPartial: "已成功转换 {count} 条账号，仍有格式不合规的行需要手动修正。",
     bulkFormatNoMatch: "没有识别到可转换的 Gmail 账号，已保留原始输入。",
     bulkFormatFailed: "格式转换失败。",
+    bulkSubmitInvalid: "以下行格式不符合要求：{lines}。请先修正后再提交。",
     expandBulkEditor: "放大编辑",
     bulkEditorTitle: "批量账号编辑器",
     bulkEditorDescription: "这里可以用更大的编辑窗口整理批量账号内容，修改会实时同步回表单。",
@@ -260,6 +273,16 @@ const LANGUAGE_COPY = {
       exhausted: "已耗尽",
       merged: "已合并",
     },
+    bulkIssueLine: "第 {line} 行：{reason}",
+    bulkIssueMore: "以及另外 {count} 行",
+    bulkIssueLabels: {
+      missing_separator: "未使用 Gmail---Password---2fa密钥 格式",
+      missing_gmail: "缺少 Gmail 邮箱",
+      invalid_gmail: "Gmail 邮箱不合法",
+      missing_password: "缺少密码",
+      missing_twofa: "缺少 2FA 密钥",
+      invalid_twofa: "2FA 密钥不合法",
+    },
   },
   en: {
     requestFailed: "Request failed",
@@ -299,8 +322,10 @@ const LANGUAGE_COPY = {
     bulkFormat: "Format",
     bulkFormatting: "Formatting...",
     bulkFormatApplied: "Normalized {count} account(s) and filled the input.",
+    bulkFormatPartial: "Normalized {count} account(s), but some lines still need manual fixes.",
     bulkFormatNoMatch: "No convertible Gmail accounts were found. The original input was kept.",
     bulkFormatFailed: "Format conversion failed.",
+    bulkSubmitInvalid: "These lines are not in a valid format: {lines}. Please fix them before submitting.",
     expandBulkEditor: "Expand Editor",
     bulkEditorTitle: "Bulk Account Editor",
     bulkEditorDescription: "Use this larger editor to organize bulk account lines. Changes sync back to the form immediately.",
@@ -402,8 +427,20 @@ const LANGUAGE_COPY = {
       exhausted: "Exhausted",
       merged: "Merged",
     },
+    bulkIssueLine: "Line {line}: {reason}",
+    bulkIssueMore: "and {count} more line(s)",
+    bulkIssueLabels: {
+      missing_separator: "must use the Gmail---Password---2fa key format",
+      missing_gmail: "missing Gmail address",
+      invalid_gmail: "invalid Gmail address",
+      missing_password: "missing password",
+      missing_twofa: "missing 2FA key",
+      invalid_twofa: "invalid 2FA key",
+    },
   },
 } as const;
+
+type ExchangeStudioCopy = (typeof LANGUAGE_COPY)["zh"] | (typeof LANGUAGE_COPY)["en"];
 
 function formatDate(value: string | null | undefined, locale: string, emptyLabel: string) {
   if (!value) {
@@ -442,8 +479,24 @@ function isHttpUrl(value?: string | null) {
   }
 }
 
-function isGmailAddress(value: string) {
-  return /^[^@\s]+@gmail\.com$/i.test(value.trim());
+function formatInvalidBulkLinesMessage(
+  copy: ExchangeStudioCopy,
+  invalidLines: Array<{ lineNumber: number; code: AccountFormatIssueCode }>
+) {
+  const visibleLines = invalidLines.slice(0, 6);
+  const details = visibleLines
+    .map((line) =>
+      copy.bulkIssueLine
+        .replace("{line}", String(line.lineNumber))
+        .replace("{reason}", copy.bulkIssueLabels[line.code])
+    )
+    .join("；");
+  const remainingCount = invalidLines.length - visibleLines.length;
+  const suffix =
+    remainingCount > 0
+      ? `；${copy.bulkIssueMore.replace("{count}", String(remainingCount))}`
+      : "";
+  return `${details}${suffix}`;
 }
 
 function buildTaskDetailSyncKey(task?: QueueTask | null) {
@@ -843,12 +896,28 @@ export function ExchangeStudio() {
         body: JSON.stringify({ input: normalizedBulkText }),
       });
 
+      setBulkText(response.normalizedText);
+
+      if (response.invalidLines.length > 0) {
+        setBulkFormatError(
+          copy.bulkSubmitInvalid.replace(
+            "{lines}",
+            formatInvalidBulkLinesMessage(copy, response.invalidLines)
+          )
+        );
+        setBulkFormatMessage(
+          response.validLineCount > 0
+            ? copy.bulkFormatPartial.replace("{count}", String(response.validLineCount))
+            : null
+        );
+        return;
+      }
+
       if (response.normalizedText.trim()) {
-        setBulkText(response.normalizedText);
         setBulkFormatMessage(
           copy.bulkFormatApplied.replace(
             "{count}",
-            String(response.lineCount || response.normalizedLines.length || 0)
+            String(response.validLineCount || response.lineCount || response.normalizedLines.length || 0)
           )
         );
         return;
@@ -870,6 +939,7 @@ export function ExchangeStudio() {
     const normalizedPassword = password.trim();
     const normalizedTwofaUrl = twofaUrl.trim();
     const normalizedBulkText = bulkText.trim();
+    let validatedBulkText = "";
 
     if (selectedMode && !selectedMode.enabled) {
       setError(copy.modeMaintenanceError);
@@ -905,13 +975,39 @@ export function ExchangeStudio() {
         setError(copy.enterTotp);
         return;
       }
-    } else if (!normalizedBulkText) {
-      setError(copy.enterBulk);
-      return;
+    } else {
+      if (!normalizedBulkText) {
+        setBulkFormatMessage(null);
+        setBulkFormatError(copy.enterBulk);
+        setError(null);
+        return;
+      }
+
+      const bulkValidation = validateBulkAccountText(bulkText);
+      if (!bulkValidation.validLines.length) {
+        setBulkFormatMessage(null);
+        setBulkFormatError(copy.enterBulk);
+        setError(null);
+        return;
+      }
+      if (bulkValidation.invalidLines.length) {
+        setBulkFormatMessage(null);
+        setBulkFormatError(
+          copy.bulkSubmitInvalid.replace(
+            "{lines}",
+            formatInvalidBulkLinesMessage(copy, bulkValidation.invalidLines)
+          )
+        );
+        setError(null);
+        return;
+      }
+
+      validatedBulkText = bulkValidation.validLines.join("\n");
     }
 
     setError(null);
     setMessage(null);
+    setBulkFormatError(null);
     startTransition(async () => {
       try {
         const requestBody =
@@ -923,7 +1019,7 @@ export function ExchangeStudio() {
                 email: "",
                 password: "",
                 twofa_url: "",
-                bulk_text: normalizedBulkText,
+                bulk_text: validatedBulkText,
               }
             : {
                 code: normalizedCode,

@@ -57,7 +57,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       normalizedLines: result.normalizedLines,
       normalizedText: result.normalizedText,
-      lineCount: result.normalizedLines.length,
+      lineCount: result.normalizedLines.filter((line) => line.trim()).length,
+      validLineCount: result.validLineCount,
+      invalidLines: result.invalidLines.map((line) => ({
+        lineNumber: line.lineNumber,
+        code: line.code,
+      })),
+      allValid: result.invalidLines.length === 0,
     });
   } catch (error) {
     const detail =

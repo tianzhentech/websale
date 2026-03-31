@@ -1,5 +1,11 @@
 import "server-only";
 
+import {
+  isGmailAddress,
+  validateBulkAccountText,
+  type AccountFormatIssueCode,
+  type InvalidBulkAccountLine,
+} from "@/lib/account-format";
 import { readAdminRuntimeConfig } from "@/lib/admin-config";
 import { readServerEnv } from "@/lib/server-env";
 
@@ -223,8 +229,33 @@ function isRunMode(value: unknown): value is RunMode {
   return value === "extract_link" || value === "subscription";
 }
 
-function isGmailAddress(value: string) {
-  return /^[^@\s]+@gmail\.com$/i.test(value.trim());
+function resolveBulkLineIssueLabel(code: AccountFormatIssueCode) {
+  switch (code) {
+    case "missing_separator":
+      return "未使用 Gmail---Password---2fa密钥 格式";
+    case "missing_gmail":
+      return "缺少 Gmail 邮箱";
+    case "invalid_gmail":
+      return "Gmail 邮箱不合法";
+    case "missing_password":
+      return "缺少密码";
+    case "missing_twofa":
+      return "缺少 2FA 密钥";
+    case "invalid_twofa":
+      return "2FA 密钥不合法";
+    default:
+      return "格式不合法";
+  }
+}
+
+function buildInvalidBulkLinesErrorMessage(invalidLines: InvalidBulkAccountLine[]) {
+  const visibleLines = invalidLines.slice(0, 8);
+  const details = visibleLines
+    .map((line) => `第 ${line.lineNumber} 行（${resolveBulkLineIssueLabel(line.code)}）`)
+    .join("；");
+  const remainingCount = invalidLines.length - visibleLines.length;
+  const suffix = remainingCount > 0 ? `；以及另外 ${remainingCount} 行` : "";
+  return `以下行格式不符合要求：${details}${suffix}。请先修正后再提交。`;
 }
 
 async function resolveRunModeAvailability(): Promise<RunModeAvailability> {
@@ -895,19 +926,21 @@ export async function queueBatchExchangeTasks({
     throw new WebSaleApiError(400, `Unsupported run mode: ${String(runMode)}`);
   }
 
+  const bulkValidation = validateBulkAccountText(normalizedBulkText);
+  if (!bulkValidation.validLines.length) {
+    throw new WebSaleApiError(400, "Bulk account text is required.");
+  }
+  if (bulkValidation.invalidLines.length) {
+    throw new WebSaleApiError(400, buildInvalidBulkLinesErrorMessage(bulkValidation.invalidLines));
+  }
+
+  const normalizedValidatedBulkText = bulkValidation.validLines.join("\n");
+
   const availability = await resolveRunModeAvailability();
   ensureRunModeEnabled(runMode, availability);
 
   const preview = await fetchRemoteCdkDetail(normalizedCode, availability);
   const price = preview.pricing[runMode] ?? 0;
-  const accountLines = normalizedBulkText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (!accountLines.length) {
-    throw new WebSaleApiError(400, "Bulk account text is required.");
-  }
   if (preview.cdk.status !== "active" || preview.cdk.remaining_amount <= 0) {
     throw new WebSaleApiError(409, "This CDK is not available for exchange.");
   }
@@ -915,7 +948,7 @@ export async function queueBatchExchangeTasks({
     throw new WebSaleApiError(400, `No pricing configured for ${runMode}.`);
   }
 
-  const requiredAmount = accountLines.length * price;
+  const requiredAmount = bulkValidation.validLines.length * price;
   if (preview.cdk.available_amount < requiredAmount) {
     throw new WebSaleApiError(
       409,
@@ -924,7 +957,7 @@ export async function queueBatchExchangeTasks({
   }
 
   const created = await backendRequest("POST", "/api/tasks/bulk", {
-    text: normalizedBulkText,
+    text: normalizedValidatedBulkText,
     run_mode: runMode,
     cdk_code: normalizedCode,
   });
@@ -936,7 +969,7 @@ export async function queueBatchExchangeTasks({
     ? created.normalized_lines
         .map((line) => asString(line).trim())
         .filter(Boolean)
-    : [];
+    : bulkValidation.validLines;
 
   return {
     generated_at: utcNow(),
