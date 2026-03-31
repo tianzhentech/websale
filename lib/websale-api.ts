@@ -857,7 +857,7 @@ export async function queueExchangeTask({
     throw new WebSaleApiError(400, "Password is required.");
   }
   if (!normalizedTwofaUrl) {
-    throw new WebSaleApiError(400, "TOTP 密钥不能为空。");
+    throw new WebSaleApiError(400, "2FA 密钥不能为空。");
   }
 
   if (!isRunMode(runMode)) {

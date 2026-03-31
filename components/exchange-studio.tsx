@@ -83,6 +83,7 @@ type QueueTask = {
 };
 
 type ExchangeResponse = {
+  generated_at?: string;
   detail: CdkDetail;
   tasks: QueueTask[];
   created: number;
@@ -102,6 +103,27 @@ type TaskLookupResponse = {
 type TaskStreamResponse = {
   generated_at?: string;
   tasks: QueueTask[];
+};
+
+type EnqueueHistoryItem = {
+  task_id: number;
+  raw_account: string;
+  task: QueueTask;
+};
+
+type EnqueueHistoryRecord = {
+  id: string;
+  created_at: string;
+  cdk_code: string;
+  run_mode: RunMode;
+  account_mode: AccountMode;
+  items: EnqueueHistoryItem[];
+};
+
+type EnqueueHistoryCopyFeedback = {
+  recordId: string;
+  column: "success" | "failed";
+  status: "copied" | "failed";
 };
 
 type ConfigResponse = {
@@ -124,6 +146,8 @@ type FormatConvertResponse = {
 };
 
 const CDK_STORAGE_KEY = "pixel-websale-cdk-code";
+const ENQUEUE_HISTORY_STORAGE_KEY = "pixel-websale-enqueue-history";
+const MAX_ENQUEUE_HISTORY_RECORDS = 48;
 const BULK_TEXT_PLACEHOLDER = "demo.user@gmail.com---Passw0rd!---JBSWY3DPEHPK3PXP";
 const TASK_LIST_PAGE_SIZE = 10;
 const transactionGridTemplate =
@@ -141,7 +165,7 @@ const LANGUAGE_COPY = {
     enterEmail: "请输入邮箱。",
     gmailOnly: "目前仅支持 Gmail 邮箱。",
     enterPassword: "请输入密码。",
-    enterTotp: "请输入 TOTP 密钥。",
+    enterTotp: "请输入 2FA 密钥。",
     enterBulk: "请输入批量账号内容。",
     submitFailed: "提交任务失败。",
     step1: "Step 1",
@@ -159,10 +183,10 @@ const LANGUAGE_COPY = {
     bulkEntry: "批量录入",
     email: "邮箱",
     password: "密码",
-    totpKey: "TOTP 密钥",
+    totpKey: "2FA 密钥",
     emailPlaceholder: "输入 Gmail 邮箱",
     passwordPlaceholder: "输入密码",
-    totpPlaceholder: "输入 TOTP 密钥",
+    totpPlaceholder: "输入 2FA 密钥",
     bulkHelp: "每行 1 个账号，必须使用 ",
     bulkContent: "批量账号内容",
     bulkFormat: "格式转换",
@@ -187,6 +211,21 @@ const LANGUAGE_COPY = {
     expectedCharge: "预计扣费",
     createdAt: "创建时间",
     taskListTitle: "任务列表",
+    queueHistory: "入队记录",
+    queueHistoryLocalHint: "仅保存在当前浏览器",
+    queueHistoryEmpty: "当前浏览器里还没有保存过入队记录。",
+    queueHistoryTime: "入队时间",
+    queueHistorySummary: "{mode} · {count} 条",
+    queueHistoryDetailTitle: "原始账号记录",
+    queueHistoryTaskCount: "共 {count} 条账号",
+    queueHistoryPendingHint: "还有 {count} 条任务仍在排队或处理中。",
+    queueHistorySuccess: "成功记录",
+    queueHistoryFailed: "失败记录",
+    queueHistoryNoSuccess: "暂无成功记录。",
+    queueHistoryNoFailed: "暂无失败记录。",
+    queueHistoryCopy: "复制账号",
+    queueHistoryCopied: "已复制",
+    queueHistoryCopyFailed: "复制失败，请手动选中账号内容。",
     previousPage: "上一页",
     nextPage: "下一页",
     taskListPage: "第 {current} / {total} 页",
@@ -295,7 +334,7 @@ const LANGUAGE_COPY = {
     enterEmail: "Please enter an email.",
     gmailOnly: "Only Gmail accounts are supported right now.",
     enterPassword: "Please enter a password.",
-    enterTotp: "Please enter a TOTP key.",
+    enterTotp: "Please enter a 2FA key.",
     enterBulk: "Please enter bulk account content.",
     submitFailed: "Failed to submit the task.",
     step1: "Step 1",
@@ -313,10 +352,10 @@ const LANGUAGE_COPY = {
     bulkEntry: "Bulk Entry",
     email: "Email",
     password: "Password",
-    totpKey: "TOTP Key",
+    totpKey: "2FA Key",
     emailPlaceholder: "Enter a Gmail address",
     passwordPlaceholder: "Enter password",
-    totpPlaceholder: "Enter TOTP key",
+    totpPlaceholder: "Enter 2FA key",
     bulkHelp: "Each line must use ",
     bulkContent: "Bulk Accounts",
     bulkFormat: "Format",
@@ -341,6 +380,21 @@ const LANGUAGE_COPY = {
     expectedCharge: "Expected Charge",
     createdAt: "Created At",
     taskListTitle: "Task List",
+    queueHistory: "Queue History",
+    queueHistoryLocalHint: "Saved in this browser only",
+    queueHistoryEmpty: "No queue history has been saved in this browser yet.",
+    queueHistoryTime: "Queued At",
+    queueHistorySummary: "{mode} · {count} accounts",
+    queueHistoryDetailTitle: "Original Accounts",
+    queueHistoryTaskCount: "{count} account(s)",
+    queueHistoryPendingHint: "{count} task(s) are still queued or running.",
+    queueHistorySuccess: "Successful",
+    queueHistoryFailed: "Failed",
+    queueHistoryNoSuccess: "No successful records yet.",
+    queueHistoryNoFailed: "No failed records yet.",
+    queueHistoryCopy: "Copy Accounts",
+    queueHistoryCopied: "Copied",
+    queueHistoryCopyFailed: "Copy failed. Please select the account lines manually.",
     previousPage: "Previous",
     nextPage: "Next",
     taskListPage: "Page {current} / {total}",
@@ -466,6 +520,10 @@ function classNames(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function isHttpUrl(value?: string | null) {
   if (!value) {
     return false;
@@ -477,6 +535,220 @@ function isHttpUrl(value?: string | null) {
   } catch {
     return false;
   }
+}
+
+function asOptionalStringValue(value: unknown) {
+  return typeof value === "string" ? value : null;
+}
+
+function normalizeStoredQueueTask(value: unknown): QueueTask | null {
+  if (!isObjectRecord(value)) {
+    return null;
+  }
+
+  const taskId = Number(value.id);
+  const email = typeof value.email === "string" ? value.email.trim() : "";
+  if (!Number.isFinite(taskId) || taskId <= 0 || !email) {
+    return null;
+  }
+
+  return {
+    id: Math.trunc(taskId),
+    email,
+    run_mode: value.run_mode === "extract_link" || value.run_mode === "subscription" ? value.run_mode : null,
+    run_mode_label:
+      typeof value.run_mode_label === "string" && value.run_mode_label.trim()
+        ? value.run_mode_label
+        : "未指定",
+    cdk_code: asOptionalStringValue(value.cdk_code),
+    cdk_charge_status: asOptionalStringValue(value.cdk_charge_status),
+    cdk_charge_status_label: asOptionalStringValue(value.cdk_charge_status_label),
+    cdk_charge_amount: Number.isFinite(Number(value.cdk_charge_amount))
+      ? Math.trunc(Number(value.cdk_charge_amount))
+      : 0,
+    cdk_charge_error: asOptionalStringValue(value.cdk_charge_error),
+    cdk_charged_at: asOptionalStringValue(value.cdk_charged_at),
+    status: typeof value.status === "string" && value.status.trim() ? value.status : "queued",
+    device_serial: asOptionalStringValue(value.device_serial),
+    card_id:
+      value.card_id == null || !Number.isFinite(Number(value.card_id))
+        ? null
+        : Math.trunc(Number(value.card_id)),
+    error_message: asOptionalStringValue(value.error_message),
+    success_message: asOptionalStringValue(value.success_message),
+    attempt_count: Number.isFinite(Number(value.attempt_count))
+      ? Math.trunc(Number(value.attempt_count))
+      : 0,
+    created_at: asOptionalStringValue(value.created_at),
+    started_at: asOptionalStringValue(value.started_at),
+    finished_at: asOptionalStringValue(value.finished_at),
+    updated_at: asOptionalStringValue(value.updated_at),
+    has_twofa: Boolean(value.has_twofa),
+  };
+}
+
+function buildRawAccountLine(email: string, password: string, twofaKey: string) {
+  return `${email}---${password}---${twofaKey}`;
+}
+
+function buildFallbackHistoryRawAccount(task: QueueTask) {
+  return task.email ? `${task.email}` : `#${task.id}`;
+}
+
+function createHistoryRecordId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `queue-record-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function isStreamingTask(task: QueueTask) {
+  return (
+    task.status === "queued" ||
+    task.status === "running" ||
+    task.cdk_charge_status === "pending"
+  );
+}
+
+function isFailedTaskStatus(status: string) {
+  return !["queued", "running", "success"].includes(status);
+}
+
+function mergeTaskSnapshots(currentTasks: QueueTask[], refreshedTasks: QueueTask[]) {
+  if (!refreshedTasks.length) {
+    return currentTasks;
+  }
+
+  const refreshedById = new Map(refreshedTasks.map((task) => [task.id, task]));
+  return currentTasks.map((task) => refreshedById.get(task.id) || task);
+}
+
+function mergeEnqueueHistoryRecords(
+  currentRecords: EnqueueHistoryRecord[],
+  refreshedTasks: QueueTask[]
+) {
+  if (!refreshedTasks.length) {
+    return currentRecords;
+  }
+
+  const refreshedById = new Map(refreshedTasks.map((task) => [task.id, task]));
+  return currentRecords.map((record) => ({
+    ...record,
+    items: record.items.map((item) => {
+      const nextTask = refreshedById.get(item.task.id) || item.task;
+      return {
+        ...item,
+        task_id: nextTask.id,
+        task: nextTask,
+      };
+    }),
+  }));
+}
+
+function normalizeStoredEnqueueHistoryRecord(value: unknown): EnqueueHistoryRecord | null {
+  if (!isObjectRecord(value)) {
+    return null;
+  }
+
+  const items = Array.isArray(value.items)
+    ? value.items
+        .map((item) => {
+          if (!isObjectRecord(item)) {
+            return null;
+          }
+
+          const task = normalizeStoredQueueTask(item.task);
+          if (!task) {
+            return null;
+          }
+
+          const rawAccount =
+            typeof item.raw_account === "string" && item.raw_account.trim()
+              ? item.raw_account
+              : buildFallbackHistoryRawAccount(task);
+
+          return {
+            task_id: task.id,
+            raw_account: rawAccount,
+            task,
+          } satisfies EnqueueHistoryItem;
+        })
+        .filter((item): item is EnqueueHistoryItem => Boolean(item))
+    : [];
+
+  if (!items.length) {
+    return null;
+  }
+
+  const runMode =
+    value.run_mode === "extract_link" || value.run_mode === "subscription"
+      ? value.run_mode
+      : items.find((item) => item.task.run_mode)?.task.run_mode ?? null;
+  if (!runMode) {
+    return null;
+  }
+
+  return {
+    id:
+      (typeof value.id === "string" && value.id.trim()) ||
+      createHistoryRecordId(),
+    created_at:
+      (typeof value.created_at === "string" && value.created_at) ||
+      items[0]?.task.created_at ||
+      new Date().toISOString(),
+    cdk_code:
+      (typeof value.cdk_code === "string" && value.cdk_code.trim()) ||
+      items[0]?.task.cdk_code ||
+      "",
+    run_mode: runMode,
+    account_mode: value.account_mode === "bulk" ? "bulk" : "single",
+    items,
+  };
+}
+
+function buildEnqueueHistoryRecord({
+  createdAt,
+  cdkCode,
+  runMode,
+  accountMode,
+  tasks,
+  rawAccounts,
+  normalizedLines,
+}: {
+  createdAt?: string;
+  cdkCode: string;
+  runMode: RunMode;
+  accountMode: AccountMode;
+  tasks: QueueTask[];
+  rawAccounts: string[];
+  normalizedLines: string[];
+}) {
+  const items = tasks
+    .map((task, index) => {
+      const rawAccount =
+        rawAccounts[index]?.trim() ||
+        normalizedLines[index]?.trim() ||
+        buildFallbackHistoryRawAccount(task);
+      return {
+        task_id: task.id,
+        raw_account: rawAccount,
+        task,
+      } satisfies EnqueueHistoryItem;
+    })
+    .filter((item) => item.task_id > 0);
+
+  if (!items.length) {
+    return null;
+  }
+
+  return {
+    id: createHistoryRecordId(),
+    created_at: createdAt || new Date().toISOString(),
+    cdk_code: cdkCode,
+    run_mode: runMode,
+    account_mode: accountMode,
+    items,
+  } satisfies EnqueueHistoryRecord;
 }
 
 function formatInvalidBulkLinesMessage(
@@ -554,9 +826,16 @@ export function ExchangeStudio() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [detail, setDetail] = useState<CdkDetail | null>(null);
   const [taskList, setTaskList] = useState<QueueTask[]>([]);
+  const [enqueueHistory, setEnqueueHistory] = useState<EnqueueHistoryRecord[]>([]);
+  const [hasLoadedEnqueueHistory, setHasLoadedEnqueueHistory] = useState(false);
+  const [isQueueHistoryOpen, setIsQueueHistoryOpen] = useState(false);
+  const [selectedQueueHistoryId, setSelectedQueueHistoryId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [currentTaskPage, setCurrentTaskPage] = useState(1);
   const [copyFeedback, setCopyFeedback] = useState<"copied" | "failed" | null>(null);
+  const [queueHistoryCopyFeedback, setQueueHistoryCopyFeedback] =
+    useState<EnqueueHistoryCopyFeedback | null>(null);
+  const taskListRef = useRef<QueueTask[]>([]);
   const taskDetailSyncKeyRef = useRef("");
   const [isPending, startTransition] = useTransition();
   const isChinese = language === "zh";
@@ -585,7 +864,23 @@ export function ExchangeStudio() {
     const pageStart = (currentTaskPage - 1) * TASK_LIST_PAGE_SIZE;
     return taskList.slice(pageStart, pageStart + TASK_LIST_PAGE_SIZE);
   }, [currentTaskPage, taskList]);
+  const selectedQueueHistory = useMemo(() => {
+    if (!enqueueHistory.length) {
+      return null;
+    }
+    if (selectedQueueHistoryId) {
+      const matchedRecord = enqueueHistory.find((record) => record.id === selectedQueueHistoryId);
+      if (matchedRecord) {
+        return matchedRecord;
+      }
+    }
+    return enqueueHistory[0] ?? null;
+  }, [enqueueHistory, selectedQueueHistoryId]);
   const normalizedCode = code.trim();
+
+  useEffect(() => {
+    taskListRef.current = taskList;
+  }, [taskList]);
 
   useEffect(() => {
     startTransition(async () => {
@@ -613,8 +908,42 @@ export function ExchangeStudio() {
   }, []);
 
   useEffect(() => {
+    try {
+      const rawValue = window.localStorage.getItem(ENQUEUE_HISTORY_STORAGE_KEY);
+      if (!rawValue) {
+        setEnqueueHistory([]);
+        return;
+      }
+
+      const parsedValue = JSON.parse(rawValue) as unknown;
+      const records = Array.isArray(parsedValue)
+        ? parsedValue
+            .map((record) => normalizeStoredEnqueueHistoryRecord(record))
+            .filter((record): record is EnqueueHistoryRecord => Boolean(record))
+            .slice(0, MAX_ENQUEUE_HISTORY_RECORDS)
+        : [];
+
+      setEnqueueHistory(records);
+      setSelectedQueueHistoryId(records[0]?.id ?? null);
+    } catch {
+      setEnqueueHistory([]);
+    } finally {
+      setHasLoadedEnqueueHistory(true);
+    }
+  }, []);
+
+  useEffect(() => {
     setCurrentTaskPage((currentPage) => Math.min(Math.max(1, currentPage), totalTaskPages));
   }, [totalTaskPages]);
+
+  useEffect(() => {
+    setSelectedQueueHistoryId((currentId) => {
+      if (currentId && enqueueHistory.some((record) => record.id === currentId)) {
+        return currentId;
+      }
+      return enqueueHistory[0]?.id ?? null;
+    });
+  }, [enqueueHistory]);
 
   useEffect(() => {
     if (selectedTaskId === null) {
@@ -645,6 +974,25 @@ export function ExchangeStudio() {
       // Ignore localStorage access errors in restricted browser modes.
     }
   }, [hasLoadedStoredCode, normalizedCode]);
+
+  useEffect(() => {
+    if (!hasLoadedEnqueueHistory) {
+      return;
+    }
+
+    try {
+      if (enqueueHistory.length) {
+        window.localStorage.setItem(
+          ENQUEUE_HISTORY_STORAGE_KEY,
+          JSON.stringify(enqueueHistory.slice(0, MAX_ENQUEUE_HISTORY_RECORDS))
+        );
+      } else {
+        window.localStorage.removeItem(ENQUEUE_HISTORY_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore localStorage access errors in restricted browser modes.
+    }
+  }, [enqueueHistory, hasLoadedEnqueueHistory]);
 
   useEffect(() => {
     if (!hasLoadedStoredCode) {
@@ -697,40 +1045,106 @@ export function ExchangeStudio() {
     };
   }, [copy.cdkAutoFailed, hasLoadedStoredCode, normalizedCode]);
 
-  const hasStreamingTasks = useMemo(
+  const historyLookupKey = useMemo(
     () =>
-      taskList.some(
-        (item) =>
-          item.status === "queued" || item.status === "running" || item.cdk_charge_status === "pending"
-      ),
+      Array.from(
+        new Set(
+          enqueueHistory.flatMap((record) => record.items.map((item) => item.task.id))
+        )
+      ).join(","),
+    [enqueueHistory]
+  );
+  const hasCurrentStreamingTasks = useMemo(
+    () => taskList.some((item) => isStreamingTask(item)),
     [taskList]
   );
-  const taskStreamKey = useMemo(
+  const currentTaskIds = useMemo(
     () =>
       taskList
         .map((item) => item.id)
-        .filter((taskId) => Number.isFinite(taskId) && taskId > 0)
-        .join(","),
+        .filter((taskId) => Number.isFinite(taskId) && taskId > 0),
     [taskList]
+  );
+  const currentTaskIdsKey = useMemo(() => currentTaskIds.join(","), [currentTaskIds]);
+  const historyStreamingTaskIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          enqueueHistory.flatMap((record) =>
+            record.items
+              .filter((item) => isStreamingTask(item.task))
+              .map((item) => item.task.id)
+          )
+        )
+      ),
+    [enqueueHistory]
+  );
+  const trackedTaskStreamKey = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...(hasCurrentStreamingTasks ? currentTaskIds : []),
+          ...historyStreamingTaskIds,
+        ])
+      ).join(","),
+    [currentTaskIds, hasCurrentStreamingTasks, historyStreamingTaskIds]
   );
 
   useEffect(() => {
-    if (!hasStreamingTasks || !taskStreamKey) {
+    if (!hasLoadedEnqueueHistory || !historyLookupKey) {
+      return;
+    }
+
+    let cancelled = false;
+    const taskIds = historyLookupKey
+      .split(",")
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+    if (!taskIds.length) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const payload = await request<TaskLookupResponse>("/api/tasks/lookup", {
+          method: "POST",
+          body: JSON.stringify({ task_ids: taskIds }),
+        });
+        if (cancelled || !payload.tasks.length) {
+          return;
+        }
+        setEnqueueHistory((currentRecords) =>
+          mergeEnqueueHistoryRecords(currentRecords, payload.tasks)
+        );
+        setTaskList((currentTasks) => mergeTaskSnapshots(currentTasks, payload.tasks));
+      } catch {
+        // Keep the browser snapshot if lookup fails.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasLoadedEnqueueHistory, historyLookupKey]);
+
+  useEffect(() => {
+    if (!trackedTaskStreamKey) {
       return;
     }
 
     let cancelled = false;
     const eventSource = new EventSource(
       `/api/tasks/stream?${new URLSearchParams(
-        taskStreamKey.split(",").map((taskId) => ["task_id", taskId])
+        trackedTaskStreamKey.split(",").map((taskId) => ["task_id", taskId])
       ).toString()}`
     );
 
-    const syncActiveTaskDetail = async (refreshedTasks: QueueTask[]) => {
+    const syncActiveTaskDetail = async (refreshedCurrentTasks: QueueTask[]) => {
       const activeTaskId =
-        selectedTaskId !== null && refreshedTasks.some((item) => item.id === selectedTaskId)
+        selectedTaskId !== null && refreshedCurrentTasks.some((item) => item.id === selectedTaskId)
           ? selectedTaskId
-          : (refreshedTasks[0]?.id ?? null);
+          : (refreshedCurrentTasks[0]?.id ?? null);
 
       if (activeTaskId !== null && activeTaskId !== selectedTaskId) {
         setSelectedTaskId(activeTaskId);
@@ -738,7 +1152,7 @@ export function ExchangeStudio() {
 
       const activeTask =
         activeTaskId !== null
-          ? refreshedTasks.find((item) => item.id === activeTaskId) || null
+          ? refreshedCurrentTasks.find((item) => item.id === activeTaskId) || null
           : null;
       const nextSyncKey = buildTaskDetailSyncKey(activeTask);
       if (!activeTask || nextSyncKey === taskDetailSyncKeyRef.current) {
@@ -775,9 +1189,17 @@ export function ExchangeStudio() {
       try {
         const payload = JSON.parse(event.data) as TaskStreamResponse;
         const refreshedTasks = Array.isArray(payload.tasks) ? payload.tasks : [];
-        setTaskList(refreshedTasks);
+        if (hasCurrentStreamingTasks && currentTaskIds.length) {
+          setTaskList((currentTasks) => mergeTaskSnapshots(currentTasks, refreshedTasks));
+        }
+        setEnqueueHistory((currentRecords) =>
+          mergeEnqueueHistoryRecords(currentRecords, refreshedTasks)
+        );
         setError(null);
-        void syncActiveTaskDetail(refreshedTasks);
+        if (hasCurrentStreamingTasks && currentTaskIds.length) {
+          const nextCurrentTasks = mergeTaskSnapshots(taskListRef.current, refreshedTasks);
+          void syncActiveTaskDetail(nextCurrentTasks);
+        }
       } catch {
         setError(copy.taskRefreshFailed);
       }
@@ -794,7 +1216,14 @@ export function ExchangeStudio() {
       cancelled = true;
       eventSource.close();
     };
-  }, [copy.taskRefreshFailed, hasStreamingTasks, selectedTaskId, taskStreamKey]);
+  }, [
+    copy.taskRefreshFailed,
+    currentTaskIds.length,
+    currentTaskIdsKey,
+    hasCurrentStreamingTasks,
+    selectedTaskId,
+    trackedTaskStreamKey,
+  ]);
 
   useEffect(() => {
     if (!copyFeedback) {
@@ -809,6 +1238,20 @@ export function ExchangeStudio() {
       window.clearTimeout(timer);
     };
   }, [copyFeedback]);
+
+  useEffect(() => {
+    if (!queueHistoryCopyFeedback) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setQueueHistoryCopyFeedback(null);
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [queueHistoryCopyFeedback]);
 
   useEffect(() => {
     if (accountMode !== "bulk") {
@@ -1010,6 +1453,13 @@ export function ExchangeStudio() {
     setBulkFormatError(null);
     startTransition(async () => {
       try {
+        const rawAccountLines =
+          accountMode === "bulk"
+            ? validatedBulkText
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean)
+            : [buildRawAccountLine(normalizedEmail, normalizedPassword, normalizedTwofaUrl)];
         const requestBody =
           accountMode === "bulk"
             ? {
@@ -1038,6 +1488,21 @@ export function ExchangeStudio() {
         setTaskList(response.tasks);
         setSelectedTaskId(response.tasks[0]?.id ?? null);
         setDetail(response.detail);
+        const nextHistoryRecord = buildEnqueueHistoryRecord({
+          createdAt: response.generated_at,
+          cdkCode: normalizedCode,
+          runMode,
+          accountMode,
+          tasks: response.tasks,
+          rawAccounts: rawAccountLines,
+          normalizedLines: response.normalized_lines,
+        });
+        if (nextHistoryRecord) {
+          setEnqueueHistory((currentRecords) =>
+            [nextHistoryRecord, ...currentRecords].slice(0, MAX_ENQUEUE_HISTORY_RECORDS)
+          );
+          setSelectedQueueHistoryId(nextHistoryRecord.id);
+        }
         if (response.tasks.length === 1) {
           const task = response.tasks[0];
           const localizedRunModeLabel =
@@ -1088,6 +1553,39 @@ export function ExchangeStudio() {
       setCopyFeedback("copied");
     } catch {
       setCopyFeedback("failed");
+    }
+  };
+
+  const handleCopyQueueHistoryColumn = async (
+    record: EnqueueHistoryRecord,
+    column: "success" | "failed"
+  ) => {
+    const lines = record.items
+      .filter((item) =>
+        column === "success"
+          ? item.task.status === "success"
+          : isFailedTaskStatus(item.task.status)
+      )
+      .map((item) => item.raw_account.trim())
+      .filter(Boolean);
+
+    if (!lines.length) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setQueueHistoryCopyFeedback({
+        recordId: record.id,
+        column,
+        status: "copied",
+      });
+    } catch {
+      setQueueHistoryCopyFeedback({
+        recordId: record.id,
+        column,
+        status: "failed",
+      });
     }
   };
 
@@ -1228,7 +1726,7 @@ export function ExchangeStudio() {
               <div className="grid gap-3">
                 <div className="rounded-[1.2rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] px-4 py-3 text-sm leading-7 text-[var(--teal)]">
                   {copy.bulkHelp}
-                  <span className="font-mono">Gmail---Password---TOTP</span>
+                  <span className="font-mono">Gmail---Password---2FA</span>
                   {isChinese ? " 格式。" : " format."}
                 </div>
                 <label className="grid gap-2">
@@ -1350,10 +1848,31 @@ export function ExchangeStudio() {
 
       <article className="panel p-5 md:p-6">
         <div className="grid gap-4">
-          <div>
-            <p className="section-kicker">{copy.taskKicker}</p>
-            <h2 className="section-title">{copy.taskStatusTitle}</h2>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="section-kicker">{copy.taskKicker}</p>
+              <h2 className="section-title">{copy.taskStatusTitle}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsQueueHistoryOpen((currentOpen) => !currentOpen)}
+              className="theme-button-surface"
+            >
+              {copy.queueHistory}
+            </button>
           </div>
+
+          {isQueueHistoryOpen ? (
+            <EnqueueHistoryPanel
+              copy={copy}
+              locale={locale}
+              records={enqueueHistory}
+              selectedRecordId={selectedQueueHistory?.id ?? null}
+              onSelectRecord={setSelectedQueueHistoryId}
+              onCopyColumn={handleCopyQueueHistoryColumn}
+              copyFeedback={queueHistoryCopyFeedback}
+            />
+          ) : null}
 
           {task ? (
             <div className="grid gap-3">
@@ -1565,6 +2084,212 @@ function MetricCard({
         className={classNames("mt-3 text-base font-semibold leading-7", mono && "font-mono break-all")}
       >
         {value}
+      </div>
+    </div>
+  );
+}
+
+function EnqueueHistoryPanel({
+  copy,
+  locale,
+  records,
+  selectedRecordId,
+  onSelectRecord,
+  onCopyColumn,
+  copyFeedback,
+}: {
+  copy: ExchangeStudioCopy;
+  locale: string;
+  records: EnqueueHistoryRecord[];
+  selectedRecordId: string | null;
+  onSelectRecord: (recordId: string) => void;
+  onCopyColumn: (record: EnqueueHistoryRecord, column: "success" | "failed") => void;
+  copyFeedback: EnqueueHistoryCopyFeedback | null;
+}) {
+  const selectedRecord =
+    records.find((record) => record.id === selectedRecordId) || records[0] || null;
+
+  if (!records.length) {
+    return (
+      <div className="surface-card rounded-[1.35rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.78)] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+            {copy.queueHistory}
+          </div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+            {copy.queueHistoryLocalHint}
+          </div>
+        </div>
+        <div className="empty-panel mt-4 min-h-[10rem]">{copy.queueHistoryEmpty}</div>
+      </div>
+    );
+  }
+
+  const successItems = selectedRecord
+    ? selectedRecord.items.filter((item) => item.task.status === "success")
+    : [];
+  const failedItems = selectedRecord
+    ? selectedRecord.items.filter((item) => isFailedTaskStatus(item.task.status))
+    : [];
+  const pendingItems = selectedRecord
+    ? selectedRecord.items.filter(
+        (item) => item.task.status !== "success" && !isFailedTaskStatus(item.task.status)
+      )
+    : [];
+  const runModeLabel =
+    selectedRecord && copy.runModeLabels[selectedRecord.run_mode]
+      ? copy.runModeLabels[selectedRecord.run_mode]
+      : selectedRecord?.run_mode || copy.notSpecified;
+
+  return (
+    <div className="surface-card grid gap-4 rounded-[1.35rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.78)] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+          {copy.queueHistory}
+        </div>
+        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+          {copy.queueHistoryLocalHint}
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)]">
+        <div className="grid gap-2">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+            {copy.queueHistoryTime}
+          </div>
+          <div className="max-h-[24rem] overflow-y-auto pr-1">
+            <div className="grid gap-2">
+              {records.map((record) => {
+                const isSelected = selectedRecord?.id === record.id;
+                const recordRunModeLabel =
+                  copy.runModeLabels[record.run_mode] || record.run_mode;
+                return (
+                  <button
+                    key={record.id}
+                    type="button"
+                    onClick={() => onSelectRecord(record.id)}
+                    className={classNames(
+                      "surface-card grid gap-1 rounded-[1rem] border px-3 py-3 text-left transition",
+                      isSelected
+                        ? "border-[rgba(18,92,95,0.24)] bg-[rgba(18,92,95,0.08)]"
+                        : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] hover:border-[rgba(18,92,95,0.16)]"
+                    )}
+                  >
+                    <div className="text-sm font-semibold text-[var(--ink)]">
+                      {formatDate(record.created_at, locale, copy.emDash)}
+                    </div>
+                    <div className="text-xs text-[var(--muted)]">
+                      {copy.queueHistorySummary
+                        .replace("{mode}", recordRunModeLabel)
+                        .replace("{count}", String(record.items.length))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4">
+          <div className="surface-soft rounded-[1.2rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
+                  {copy.queueHistoryDetailTitle}
+                </div>
+                <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[var(--ink)]">
+                  {formatDate(selectedRecord?.created_at, locale, copy.emDash)}
+                </div>
+              </div>
+              <div className="text-right text-sm leading-6 text-[var(--muted)]">
+                <div>{runModeLabel}</div>
+                <div>
+                  {copy.queueHistoryTaskCount.replace(
+                    "{count}",
+                    String(selectedRecord?.items.length || 0)
+                  )}
+                </div>
+                {selectedRecord?.cdk_code ? (
+                  <div className="font-mono text-xs">{selectedRecord.cdk_code}</div>
+                ) : null}
+              </div>
+            </div>
+            {pendingItems.length ? (
+              <div className="mt-3 text-sm leading-7 text-[var(--teal)]">
+                {copy.queueHistoryPendingHint.replace("{count}", String(pendingItems.length))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {([
+              ["success", copy.queueHistorySuccess, successItems, copy.queueHistoryNoSuccess],
+              ["failed", copy.queueHistoryFailed, failedItems, copy.queueHistoryNoFailed],
+            ] as const).map(([column, title, items, emptyLabel]) => {
+              const copied =
+                copyFeedback?.recordId === selectedRecord?.id &&
+                copyFeedback.column === column &&
+                copyFeedback.status === "copied";
+              const copyFailed =
+                copyFeedback?.recordId === selectedRecord?.id &&
+                copyFeedback.column === column &&
+                copyFeedback.status === "failed";
+
+              return (
+                <div
+                  key={column}
+                  className="surface-card grid gap-3 rounded-[1.2rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                        {title}
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-[var(--ink)]">
+                        {items.length}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => selectedRecord && onCopyColumn(selectedRecord, column)}
+                      disabled={!selectedRecord || !items.length}
+                      className={classNames(
+                        !selectedRecord || !items.length
+                          ? "theme-button-disabled"
+                          : "theme-button-secondary"
+                      )}
+                    >
+                      {copied ? copy.queueHistoryCopied : copy.queueHistoryCopy}
+                    </button>
+                  </div>
+
+                  {copyFailed ? (
+                    <div className="notice notice-error">{copy.queueHistoryCopyFailed}</div>
+                  ) : null}
+
+                  {items.length ? (
+                    <div className="max-h-[18rem] overflow-y-auto rounded-[1rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(250,246,240,0.92)] p-3">
+                      <div className="grid gap-2">
+                        {items.map((item) => (
+                          <div
+                            key={`${column}-${item.task_id}`}
+                            className="rounded-[0.9rem] border border-[rgba(31,35,28,0.06)] bg-[rgba(255,255,255,0.78)] px-3 py-3"
+                          >
+                            <div className="break-all font-mono text-xs leading-6 text-[var(--ink)] whitespace-pre-wrap">
+                              {item.raw_account}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="empty-panel min-h-[12rem]">{emptyLabel}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
