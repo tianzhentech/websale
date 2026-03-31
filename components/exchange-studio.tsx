@@ -106,6 +106,12 @@ type ConfigResponse = {
   run_modes: RunModeInfo[];
 };
 
+type FormatConvertResponse = {
+  normalizedLines: string[];
+  normalizedText: string;
+  lineCount: number;
+};
+
 const CDK_STORAGE_KEY = "pixel-websale-cdk-code";
 const BULK_TEXT_PLACEHOLDER = "demo.user@gmail.com---Passw0rd!---JBSWY3DPEHPK3PXP";
 const TASK_LIST_PAGE_SIZE = 10;
@@ -148,14 +154,19 @@ const LANGUAGE_COPY = {
     totpPlaceholder: "输入 TOTP 密钥",
     bulkHelp: "每行 1 个账号，必须使用 ",
     bulkContent: "批量账号内容",
+    bulkFormat: "格式转换",
+    bulkFormatting: "转换中...",
+    bulkFormatApplied: "已转换并写回 {count} 条账号。",
+    bulkFormatNoMatch: "没有识别到可转换的 Gmail 账号，已保留原始输入。",
+    bulkFormatFailed: "格式转换失败。",
     expandBulkEditor: "放大编辑",
     bulkEditorTitle: "批量账号编辑器",
     bulkEditorDescription: "这里可以用更大的编辑窗口整理批量账号内容，修改会实时同步回表单。",
     modePriceUnit: "Credit",
     joinQueue: "加入队列",
-    maintenance: "维护中",
-    modeMaintenanceHint: "当前维护中，暂不可提交此模式任务。",
-    modeMaintenanceError: "该模式当前维护中，暂不可提交。",
+    maintenance: "正在维护",
+    modeMaintenanceHint: "当前正在维护，暂不可提交此模式任务。",
+    modeMaintenanceError: "该模式当前正在维护，暂不可提交。",
     working: "处理中...",
     taskStatusTitle: "任务状态",
     chargeStatus: "扣费状态",
@@ -285,12 +296,17 @@ const LANGUAGE_COPY = {
     totpPlaceholder: "Enter TOTP key",
     bulkHelp: "Each line must use ",
     bulkContent: "Bulk Accounts",
+    bulkFormat: "Format",
+    bulkFormatting: "Formatting...",
+    bulkFormatApplied: "Normalized {count} account(s) and filled the input.",
+    bulkFormatNoMatch: "No convertible Gmail accounts were found. The original input was kept.",
+    bulkFormatFailed: "Format conversion failed.",
     expandBulkEditor: "Expand Editor",
     bulkEditorTitle: "Bulk Account Editor",
     bulkEditorDescription: "Use this larger editor to organize bulk account lines. Changes sync back to the form immediately.",
     modePriceUnit: "Credit",
     joinQueue: "Join Queue",
-    maintenance: "Maintenance",
+    maintenance: "Under Maintenance",
     modeMaintenanceHint: "This mode is under maintenance and is temporarily unavailable.",
     modeMaintenanceError: "This mode is currently under maintenance.",
     working: "Processing...",
@@ -477,6 +493,9 @@ export function ExchangeStudio() {
   const [cdkValidationError, setCdkValidationError] = useState<string | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [isBulkEditorOpen, setIsBulkEditorOpen] = useState(false);
+  const [isBulkFormatting, setIsBulkFormatting] = useState(false);
+  const [bulkFormatMessage, setBulkFormatMessage] = useState<string | null>(null);
+  const [bulkFormatError, setBulkFormatError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<ConfigResponse | null>(null);
@@ -741,6 +760,8 @@ export function ExchangeStudio() {
   useEffect(() => {
     if (accountMode !== "bulk") {
       setIsBulkEditorOpen(false);
+      setBulkFormatMessage(null);
+      setBulkFormatError(null);
     }
   }, [accountMode]);
 
@@ -796,6 +817,51 @@ export function ExchangeStudio() {
 
     setCurrentTaskPage(normalizedPage);
     setSelectedTaskId(nextSelectedTask?.id ?? null);
+  };
+
+  const handleBulkFormat = async () => {
+    const normalizedBulkText = bulkText.trim();
+
+    if (!normalizedBulkText) {
+      setBulkFormatMessage(null);
+      setBulkFormatError(copy.enterBulk);
+      return;
+    }
+
+    setBulkFormatMessage(null);
+    setBulkFormatError(null);
+    setError(null);
+    setMessage(null);
+    setIsBulkFormatting(true);
+
+    try {
+      const response = await request<FormatConvertResponse>("/api/format-convert", {
+        method: "POST",
+        headers: {
+          "x-ui-language": language,
+        },
+        body: JSON.stringify({ input: normalizedBulkText }),
+      });
+
+      if (response.normalizedText.trim()) {
+        setBulkText(response.normalizedText);
+        setBulkFormatMessage(
+          copy.bulkFormatApplied.replace(
+            "{count}",
+            String(response.lineCount || response.normalizedLines.length || 0)
+          )
+        );
+        return;
+      }
+
+      setBulkFormatMessage(copy.bulkFormatNoMatch);
+    } catch (nextError) {
+      setBulkFormatError(
+        nextError instanceof Error ? nextError.message : copy.bulkFormatFailed
+      );
+    } finally {
+      setIsBulkFormatting(false);
+    }
   };
 
   const handleQueueSubmit = (runMode: RunMode) => {
@@ -1073,14 +1139,39 @@ export function ExchangeStudio() {
                   <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                     {copy.bulkContent}
                   </span>
+                  {bulkFormatMessage ? (
+                    <div className="notice notice-success">{bulkFormatMessage}</div>
+                  ) : null}
+                  {bulkFormatError ? (
+                    <div className="notice notice-error">{bulkFormatError}</div>
+                  ) : null}
                   <div className="relative">
                     <textarea
                       value={bulkText}
-                      onChange={(event) => setBulkText(event.target.value)}
+                      onChange={(event) => {
+                        setBulkText(event.target.value);
+                        if (bulkFormatMessage) {
+                          setBulkFormatMessage(null);
+                        }
+                        if (bulkFormatError) {
+                          setBulkFormatError(null);
+                        }
+                      }}
                       placeholder={BULK_TEXT_PLACEHOLDER}
                       rows={7}
                       className="min-h-[13rem] w-full resize-none rounded-[1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 pb-16 text-sm leading-7 outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
                     />
+                    <button
+                      type="button"
+                      onClick={() => void handleBulkFormat()}
+                      disabled={isBulkFormatting}
+                      className={classNames(
+                        "absolute bottom-3 left-3",
+                        isBulkFormatting ? "theme-button-disabled" : "theme-button-secondary"
+                      )}
+                    >
+                      {isBulkFormatting ? copy.bulkFormatting : copy.bulkFormat}
+                    </button>
                     <button
                       type="button"
                       onClick={() => setIsBulkEditorOpen(true)}
@@ -1114,9 +1205,16 @@ export function ExchangeStudio() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-2">
-                      <h3 className="text-2xl font-semibold tracking-[-0.03em]">
-                        {copy.runModeLabels[mode.run_mode] || mode.label}
-                      </h3>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-2xl font-semibold tracking-[-0.03em]">
+                          {copy.runModeLabels[mode.run_mode] || mode.label}
+                        </h3>
+                        {!modeEnabled ? (
+                          <span className="inline-flex rounded-full bg-[rgba(151,61,44,0.12)] px-3 py-1 text-xs font-semibold text-[#973d2c]">
+                            {copy.maintenance}
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-sm leading-6 text-[var(--muted)]">{description}</p>
                     </div>
                     <div className="text-right">

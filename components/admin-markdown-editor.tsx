@@ -136,12 +136,13 @@ export function AdminMarkdownEditor({
           backendReset: "恢复默认",
           modeKicker: "Modes",
           modeTitle: "业务模式开关",
-          modeDescription: "在这里控制首页是否允许提交提链模式或订阅模式。关闭后，对应按钮会显示维护中，服务端也会拒绝该模式的提交请求。",
-          modeSave: "保存开关",
+          modeDescription: "在这里控制首页是否允许提交提链模式或订阅模式。切换后会立即生效；关闭后，对应入队按钮会显示正在维护，服务端也会拒绝该模式的提交请求。",
           extractLinkMode: "提链模式",
           subscriptionMode: "订阅模式",
           modeEnabled: "开启",
-          modeMaintenance: "维护中",
+          modeMaintenance: "正在维护",
+          modeEnableAction: "恢复开启",
+          modeDisableAction: "切换为维护",
         }
       : {
           loginFailed: "Login failed.",
@@ -195,12 +196,13 @@ export function AdminMarkdownEditor({
           backendReset: "Use Default",
           modeKicker: "Modes",
           modeTitle: "Run Mode Switches",
-          modeDescription: "Control whether the homepage can submit redeem mode or subscription mode. When a mode is off, its submit button shows maintenance and the server also rejects that mode.",
-          modeSave: "Save Switches",
+          modeDescription: "Control whether the homepage can submit redeem mode or subscription mode. Changes apply immediately. When a mode is off, its submit button shows maintenance and the server also rejects that mode.",
           extractLinkMode: "Redeem Mode",
           subscriptionMode: "Subscription Mode",
           modeEnabled: "Enabled",
-          modeMaintenance: "Maintenance",
+          modeMaintenance: "Under Maintenance",
+          modeEnableAction: "Resume",
+          modeDisableAction: "Enter Maintenance",
         };
   const deferredMarkdown = useDeferredValue(markdown);
   const previewHtml = useMemo(
@@ -389,7 +391,10 @@ export function AdminMarkdownEditor({
     });
   };
 
-  const handleSaveRunModeConfig = () => {
+  const persistRunModeConfig = (
+    nextExtractLinkEnabled: boolean,
+    nextSubscriptionEnabled: boolean
+  ) => {
     startTransition(async () => {
       try {
         setError(null);
@@ -402,8 +407,8 @@ export function AdminMarkdownEditor({
             "x-ui-language": language,
           },
           body: JSON.stringify({
-            extract_link_enabled: extractLinkEnabled,
-            subscription_enabled: subscriptionEnabled,
+            extract_link_enabled: nextExtractLinkEnabled,
+            subscription_enabled: nextSubscriptionEnabled,
           }),
         });
 
@@ -418,6 +423,15 @@ export function AdminMarkdownEditor({
         setError(nextError instanceof Error ? nextError.message : copy.modeSaveFailed);
       }
     });
+  };
+
+  const handleToggleRunMode = (runMode: "extract_link" | "subscription") => {
+    const nextExtractLinkEnabled =
+      runMode === "extract_link" ? !extractLinkEnabled : extractLinkEnabled;
+    const nextSubscriptionEnabled =
+      runMode === "subscription" ? !subscriptionEnabled : subscriptionEnabled;
+
+    persistRunModeConfig(nextExtractLinkEnabled, nextSubscriptionEnabled);
   };
 
   const handleLogout = () => {
@@ -674,59 +688,61 @@ export function AdminMarkdownEditor({
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-2">
-                  {[
+                  {([
                     {
                       key: "extract_link",
                       label: copy.extractLinkMode,
                       enabled: extractLinkEnabled,
-                      onChange: setExtractLinkEnabled,
                     },
                     {
                       key: "subscription",
                       label: copy.subscriptionMode,
                       enabled: subscriptionEnabled,
-                      onChange: setSubscriptionEnabled,
                     },
-                  ].map((mode) => (
-                    <label
+                  ] as const).map((mode) => (
+                    <article
                       key={mode.key}
-                      className="flex items-center justify-between gap-4 rounded-[1.2rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.78)] px-4 py-4"
+                      className="grid gap-4 rounded-[1.2rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.78)] px-4 py-4"
                     >
-                      <div className="min-w-0">
-                        <div className="text-base font-semibold">{mode.label}</div>
-                        <div className="mt-1 text-sm text-[var(--muted)]">
-                          {mode.enabled ? copy.modeEnabled : copy.modeMaintenance}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-base font-semibold">{mode.label}</div>
+                          <div className="mt-1 text-sm text-[var(--muted)]">
+                            {mode.enabled ? copy.modeEnabled : copy.modeMaintenance}
+                          </div>
                         </div>
+
+                        <span
+                          className={classNames(
+                            "inline-flex shrink-0 rounded-full px-3 py-1 text-xs font-semibold",
+                            mode.enabled
+                              ? "bg-[rgba(18,92,95,0.1)] text-[var(--teal)]"
+                              : "bg-[rgba(151,61,44,0.12)] text-[#973d2c]"
+                          )}
+                        >
+                          {mode.enabled ? copy.modeEnabled : copy.modeMaintenance}
+                        </span>
                       </div>
 
-                      <span className="relative inline-flex shrink-0 items-center">
-                        <input
-                          type="checkbox"
-                          checked={mode.enabled}
-                          onChange={(event) => mode.onChange(event.target.checked)}
-                          className="peer sr-only"
-                        />
-                        <span className="h-7 w-12 rounded-full bg-[rgba(31,35,28,0.14)] transition peer-checked:bg-[var(--teal)]" />
-                        <span className="pointer-events-none absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition peer-checked:translate-x-5" />
-                      </span>
-                    </label>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleRunMode(mode.key)}
+                          disabled={isPending}
+                          className={classNames(
+                            "",
+                            isPending
+                              ? "theme-button-disabled"
+                              : mode.enabled
+                                ? "theme-button-secondary"
+                                : "theme-button-primary"
+                          )}
+                        >
+                          {mode.enabled ? copy.modeDisableAction : copy.modeEnableAction}
+                        </button>
+                      </div>
+                    </article>
                   ))}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSaveRunModeConfig}
-                    disabled={isPending}
-                    className={classNames(
-                      "",
-                      isPending
-                        ? "theme-button-disabled"
-                        : "theme-button-primary"
-                    )}
-                  >
-                    {isPending ? copy.saving : copy.modeSave}
-                  </button>
                 </div>
               </div>
             </div>
