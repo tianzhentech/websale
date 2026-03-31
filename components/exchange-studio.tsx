@@ -1261,7 +1261,7 @@ export function ExchangeStudio() {
     }
   }, [accountMode]);
 
-  const hasModalOpen = isDetailDialogOpen || isBulkEditorOpen;
+  const hasModalOpen = isDetailDialogOpen || isBulkEditorOpen || isQueueHistoryOpen;
 
   useEffect(() => {
     if (!hasModalOpen) {
@@ -1277,6 +1277,7 @@ export function ExchangeStudio() {
       if (event.key === "Escape") {
         setIsDetailDialogOpen(false);
         setIsBulkEditorOpen(false);
+        setIsQueueHistoryOpen(false);
       }
     };
 
@@ -1855,24 +1856,12 @@ export function ExchangeStudio() {
             </div>
             <button
               type="button"
-              onClick={() => setIsQueueHistoryOpen((currentOpen) => !currentOpen)}
+              onClick={() => setIsQueueHistoryOpen(true)}
               className="theme-button-surface"
             >
               {copy.queueHistory}
             </button>
           </div>
-
-          {isQueueHistoryOpen ? (
-            <EnqueueHistoryPanel
-              copy={copy}
-              locale={locale}
-              records={enqueueHistory}
-              selectedRecordId={selectedQueueHistory?.id ?? null}
-              onSelectRecord={setSelectedQueueHistoryId}
-              onCopyColumn={handleCopyQueueHistoryColumn}
-              copyFeedback={queueHistoryCopyFeedback}
-            />
-          ) : null}
 
           {task ? (
             <div className="grid gap-3">
@@ -2062,6 +2051,17 @@ export function ExchangeStudio() {
         onClose={() => setIsBulkEditorOpen(false)}
         closeLabel={copy.close}
       />
+      <QueueHistoryDialog
+        open={isQueueHistoryOpen}
+        onClose={() => setIsQueueHistoryOpen(false)}
+        copy={copy}
+        locale={locale}
+        records={enqueueHistory}
+        selectedRecordId={selectedQueueHistory?.id ?? null}
+        onSelectRecord={setSelectedQueueHistoryId}
+        onCopyColumn={handleCopyQueueHistoryColumn}
+        copyFeedback={queueHistoryCopyFeedback}
+      />
     </>
   );
 }
@@ -2084,6 +2084,66 @@ function MetricCard({
         className={classNames("mt-3 text-base font-semibold leading-7", mono && "font-mono break-all")}
       >
         {value}
+      </div>
+    </div>
+  );
+}
+
+function QueueHistoryDialog({
+  open,
+  onClose,
+  copy,
+  locale,
+  records,
+  selectedRecordId,
+  onSelectRecord,
+  onCopyColumn,
+  copyFeedback,
+}: {
+  open: boolean;
+  onClose: () => void;
+  copy: ExchangeStudioCopy;
+  locale: string;
+  records: EnqueueHistoryRecord[];
+  selectedRecordId: string | null;
+  onSelectRecord: (recordId: string) => void;
+  onCopyColumn: (record: EnqueueHistoryRecord, column: "success" | "failed") => void;
+  copyFeedback: EnqueueHistoryCopyFeedback | null;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div
+      className="modal-overlay-enter fixed inset-0 z-50 overflow-hidden overscroll-none bg-[rgba(29,34,29,0.48)] p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="modal-panel-enter mx-auto flex h-[calc(100dvh-2rem)] max-h-[56rem] w-full max-w-6xl min-h-0 flex-col gap-3"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex shrink-0 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="theme-button-surface"
+          >
+            {copy.close}
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <EnqueueHistoryPanel
+            copy={copy}
+            locale={locale}
+            records={records}
+            selectedRecordId={selectedRecordId}
+            onSelectRecord={onSelectRecord}
+            onCopyColumn={onCopyColumn}
+            copyFeedback={copyFeedback}
+          />
+        </div>
       </div>
     </div>
   );
