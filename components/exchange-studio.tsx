@@ -2120,10 +2120,10 @@ function QueueHistoryDialog({
       onClick={onClose}
     >
       <div
-        className="modal-panel-enter mx-auto flex h-[calc(100dvh-2rem)] max-h-[56rem] w-full max-w-6xl min-h-0 flex-col gap-3"
+        className="panel modal-panel-enter mx-auto flex h-[calc(100dvh-2rem)] max-h-[56rem] w-full max-w-6xl min-h-0 flex-col overflow-hidden p-5 md:p-6"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex shrink-0 justify-end">
+        <div className="mb-3 flex shrink-0 justify-end">
           <button
             type="button"
             onClick={onClose}
@@ -2328,12 +2328,12 @@ function EnqueueHistoryPanel({
                   ) : null}
 
                   {items.length ? (
-                    <div className="max-h-[18rem] overflow-y-auto rounded-[1rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(250,246,240,0.92)] p-3">
+                    <div className="surface-subtle max-h-[18rem] overflow-y-auto rounded-[1rem] border p-3">
                       <div className="grid gap-2">
                         {items.map((item) => (
                           <div
                             key={`${column}-${item.task_id}`}
-                            className="rounded-[0.9rem] border border-[rgba(31,35,28,0.06)] bg-[rgba(255,255,255,0.78)] px-3 py-3"
+                            className="surface-card rounded-[0.9rem] border px-3 py-3"
                           >
                             <div className="break-all font-mono text-xs leading-6 text-[var(--ink)] whitespace-pre-wrap">
                               {item.raw_account}
