@@ -2482,10 +2482,10 @@ function QueueHistoryDialog({
       onClick={onClose}
     >
       <div
-        className="panel modal-panel-enter mx-auto flex h-[calc(100dvh-2rem)] max-h-[56rem] w-full max-w-6xl min-h-0 flex-col overflow-hidden p-5 md:p-6"
+        className="panel modal-panel-enter mx-auto flex h-[calc(100dvh-2rem)] max-h-[56rem] w-full max-w-6xl min-h-0 flex-col overflow-hidden p-4 md:p-5"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mb-3 flex shrink-0 justify-end">
+        <div className="mb-2 flex shrink-0 justify-end">
           <button
             type="button"
             onClick={onClose}
@@ -2571,7 +2571,7 @@ function EnqueueHistoryPanel({
     : [];
 
   return (
-    <div className="grid h-full min-h-0 gap-5">
+    <div className="grid h-full min-h-0 gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
           {copy.queueHistory}
@@ -2581,9 +2581,9 @@ function EnqueueHistoryPanel({
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 items-stretch gap-5 xl:grid-cols-[minmax(16rem,0.72fr)_minmax(0,1.28fr)]">
+      <div className="grid min-h-0 flex-1 items-stretch gap-4 xl:grid-cols-[minmax(14rem,0.62fr)_minmax(0,1.38fr)]">
         <div
-          className="grid min-h-0 h-full xl:border-r xl:pr-5"
+          className="grid min-h-0 h-full xl:border-r xl:pr-4"
           style={{ borderColor: "var(--surface-border)" }}
         >
           <div className="min-h-0 h-full overflow-y-auto pr-1">
@@ -2604,7 +2604,7 @@ function EnqueueHistoryPanel({
                       borderColor: isSelected ? "rgba(18,92,95,0.24)" : "var(--surface-border)",
                     }}
                     className={classNames(
-                      "grid gap-1 rounded-[1rem] border px-3 py-3 text-left transition",
+                      "grid gap-0.5 rounded-[0.85rem] border px-3 py-2.5 text-left transition",
                       isSelected
                         ? "bg-[rgba(18,92,95,0.08)]"
                         : "bg-transparent hover:bg-[rgba(18,92,95,0.04)]"
@@ -2633,12 +2633,12 @@ function EnqueueHistoryPanel({
           </div>
         </div>
 
-        <div className="grid min-h-0 gap-4 [grid-template-rows:auto_minmax(0,0.8fr)_minmax(0,1fr)]">
-          <div className="surface-soft rounded-[1.2rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] px-4 py-3">
+        <div className="grid min-h-0 gap-3 [grid-template-rows:auto_minmax(0,0.8fr)_minmax(0,1fr)]">
+          <div className="surface-soft rounded-[1rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] px-3.5 py-2.5">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
               {copy.queueHistoryCodeInfo}
             </div>
-            <div className="mt-3 break-all font-mono text-sm leading-7 text-[var(--ink)]">
+            <div className="mt-1.5 break-all font-mono text-sm leading-6 text-[var(--ink)]">
               {selectedRecord?.cdk_code || copy.unbound}
             </div>
           </div>
@@ -2659,30 +2659,30 @@ function EnqueueHistoryPanel({
               return (
                 <div
                   key={column}
-                  className="flex min-h-0 flex-col gap-3 rounded-[1.2rem] border p-4"
+                  className="flex min-h-0 flex-col gap-2 rounded-[1rem] border p-3"
                   style={{ borderColor: "var(--surface-border)" }}
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                      {title}
-                    </div>
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                        {title}
+                      </div>
                       <div className="text-sm font-semibold text-[var(--ink)]">
                         {items.length}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => selectedRecord && onCopyColumn(selectedRecord, column)}
-                        disabled={!selectedRecord || !items.length}
-                        className={classNames(
-                          !selectedRecord || !items.length
-                            ? "theme-button-disabled"
-                            : "theme-button-secondary"
-                        )}
-                      >
-                        {copied ? copy.queueHistoryCopied : copy.queueHistoryCopy}
-                      </button>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => selectedRecord && onCopyColumn(selectedRecord, column)}
+                      disabled={!selectedRecord || !items.length}
+                      className={classNames(
+                        !selectedRecord || !items.length
+                          ? "theme-button-disabled"
+                          : "theme-button-secondary"
+                      )}
+                    >
+                      {copied ? copy.queueHistoryCopied : copy.queueHistoryCopy}
+                    </button>
                   </div>
 
                   {copyFailed ? (
@@ -2690,7 +2690,7 @@ function EnqueueHistoryPanel({
                   ) : null}
 
                   <div
-                    className="surface-ghost min-h-0 flex-1 overflow-hidden rounded-[1.5rem] border px-4 py-3"
+                    className="surface-ghost min-h-0 flex-1 overflow-hidden rounded-[1rem] border px-3.5 py-2.5"
                     style={{ borderColor: "var(--surface-border-strong)" }}
                   >
                     {items.length ? (
