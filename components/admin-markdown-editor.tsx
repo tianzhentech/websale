@@ -30,8 +30,10 @@ type AdminConfigResponse = {
   backend_api_password_override?: string | null;
   extract_link_enabled?: boolean;
   subscription_enabled?: boolean;
+  overview_activity_window_minutes?: number;
   default_backend_api_base_url?: string;
   default_backend_api_password?: string;
+  default_overview_activity_window_minutes?: number;
   detail?: string;
 };
 
@@ -77,6 +79,8 @@ export function AdminMarkdownEditor({
   const [defaultBackendApiPassword, setDefaultBackendApiPassword] = useState("");
   const [extractLinkEnabled, setExtractLinkEnabled] = useState(true);
   const [subscriptionEnabled, setSubscriptionEnabled] = useState(true);
+  const [overviewActivityWindowMinutes, setOverviewActivityWindowMinutes] = useState("");
+  const [defaultOverviewActivityWindowMinutes, setDefaultOverviewActivityWindowMinutes] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
@@ -96,6 +100,8 @@ export function AdminMarkdownEditor({
           backendResetDone: "已恢复默认后端地址。",
           modeSaveFailed: "业务模式开关保存失败。",
           modeSaved: "业务模式开关已更新。",
+          overviewSaveFailed: "热力图时间窗口保存失败。",
+          overviewSaved: "热力图时间窗口已更新。",
           admin: "Admin",
           title: "Markdown 编辑区",
           introPrefix: "这里编辑的内容会显示在首页最上方。默认密码是 ",
@@ -143,6 +149,14 @@ export function AdminMarkdownEditor({
           modeMaintenance: "正在维护",
           modeEnableAction: "恢复开启",
           modeDisableAction: "切换为维护",
+          overviewKicker: "Overview",
+          overviewTitle: "热力图时间窗口",
+          overviewDescription: "这里控制首页概览热力格子只保留最近多少分钟内的任务事件。保存后立即生效，超出窗口的旧事件会自动移出显示。",
+          overviewWindowLabel: "显示窗口（分钟）",
+          overviewWindowPlaceholder: "例如 180",
+          overviewCurrentLabel: "当前窗口",
+          overviewDefaultLabel: "默认窗口",
+          overviewSave: "保存窗口",
         }
       : {
           loginFailed: "Login failed.",
@@ -156,6 +170,8 @@ export function AdminMarkdownEditor({
           backendResetDone: "Reverted to the default backend address.",
           modeSaveFailed: "Failed to save run mode switches.",
           modeSaved: "Run mode switches updated.",
+          overviewSaveFailed: "Failed to save the heatmap activity window.",
+          overviewSaved: "Heatmap activity window updated.",
           admin: "Admin",
           title: "Markdown Editor",
           introPrefix: "Content edited here will appear at the top of the homepage. Default password: ",
@@ -203,6 +219,14 @@ export function AdminMarkdownEditor({
           modeMaintenance: "Under Maintenance",
           modeEnableAction: "Resume",
           modeDisableAction: "Enter Maintenance",
+          overviewKicker: "Overview",
+          overviewTitle: "Heatmap Activity Window",
+          overviewDescription: "Control how many recent minutes of task events the homepage overview heatmap should keep. Changes apply immediately and older events outside the window drop out automatically.",
+          overviewWindowLabel: "Window (minutes)",
+          overviewWindowPlaceholder: "For example 180",
+          overviewCurrentLabel: "Active window",
+          overviewDefaultLabel: "Default window",
+          overviewSave: "Save Window",
         };
   const deferredMarkdown = useDeferredValue(markdown);
   const previewHtml = useMemo(
@@ -241,6 +265,18 @@ export function AdminMarkdownEditor({
     );
     setExtractLinkEnabled(payload.extract_link_enabled !== false);
     setSubscriptionEnabled(payload.subscription_enabled !== false);
+    const nextDefaultOverviewWindow =
+      typeof payload.default_overview_activity_window_minutes === "number" &&
+      Number.isFinite(payload.default_overview_activity_window_minutes)
+        ? String(payload.default_overview_activity_window_minutes)
+        : "";
+    const nextOverviewWindow =
+      typeof payload.overview_activity_window_minutes === "number" &&
+      Number.isFinite(payload.overview_activity_window_minutes)
+        ? String(payload.overview_activity_window_minutes)
+        : nextDefaultOverviewWindow;
+    setDefaultOverviewActivityWindowMinutes(nextDefaultOverviewWindow);
+    setOverviewActivityWindowMinutes(nextOverviewWindow);
   };
 
   const loadAdminConfig = async () => {
@@ -268,6 +304,8 @@ export function AdminMarkdownEditor({
       setDefaultBackendApiPassword("");
       setExtractLinkEnabled(true);
       setSubscriptionEnabled(true);
+      setOverviewActivityWindowMinutes("");
+      setDefaultOverviewActivityWindowMinutes("");
       return;
     }
 
@@ -391,6 +429,36 @@ export function AdminMarkdownEditor({
     });
   };
 
+  const handleSaveOverviewConfig = () => {
+    startTransition(async () => {
+      try {
+        setError(null);
+        setStatus(null);
+
+        const response = await fetch("/api/admin/config", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "x-ui-language": language,
+          },
+          body: JSON.stringify({
+            overview_activity_window_minutes: overviewActivityWindowMinutes,
+          }),
+        });
+
+        const payload = (await response.json().catch(() => ({}))) as AdminConfigResponse;
+        if (!response.ok) {
+          throw new Error(payload.detail || copy.overviewSaveFailed);
+        }
+
+        applyAdminConfigPayload(payload);
+        setStatus(copy.overviewSaved);
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError.message : copy.overviewSaveFailed);
+      }
+    });
+  };
+
   const persistRunModeConfig = (
     nextExtractLinkEnabled: boolean,
     nextSubscriptionEnabled: boolean
@@ -452,6 +520,8 @@ export function AdminMarkdownEditor({
         setDefaultBackendApiPassword("");
         setExtractLinkEnabled(true);
         setSubscriptionEnabled(true);
+        setOverviewActivityWindowMinutes("");
+        setDefaultOverviewActivityWindowMinutes("");
         setError(null);
         setStatus(copy.loggedOut);
       }
@@ -743,6 +813,68 @@ export function AdminMarkdownEditor({
                       </div>
                     </article>
                   ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="surface-soft rounded-[1.7rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.58)] p-4">
+              <div className="grid gap-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
+                    {copy.overviewKicker}
+                  </div>
+                  <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">{copy.overviewTitle}</h2>
+                  <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">
+                    {copy.overviewDescription}
+                  </p>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,20rem)_auto] lg:items-end">
+                  <label className="grid gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                      {copy.overviewWindowLabel}
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={overviewActivityWindowMinutes}
+                      onChange={(event) => setOverviewActivityWindowMinutes(event.target.value)}
+                      placeholder={copy.overviewWindowPlaceholder}
+                      className="w-full rounded-[1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+                    />
+                  </label>
+
+                  <div className="flex flex-wrap gap-2 lg:self-start">
+                    <button
+                      type="button"
+                      onClick={handleSaveOverviewConfig}
+                      disabled={isPending}
+                      className={classNames(
+                        "",
+                        isPending
+                          ? "theme-button-disabled"
+                          : "theme-button-primary"
+                      )}
+                    >
+                      {isPending ? copy.saving : copy.overviewSave}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 text-sm leading-7 text-[var(--muted)]">
+                  <div>
+                    <span className="font-semibold text-[var(--ink)]">{copy.overviewCurrentLabel}:</span>{" "}
+                    <span className="font-mono text-[var(--teal)]">
+                      {overviewActivityWindowMinutes || "-"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-[var(--ink)]">{copy.overviewDefaultLabel}:</span>{" "}
+                    <span className="font-mono">
+                      {defaultOverviewActivityWindowMinutes || "-"}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

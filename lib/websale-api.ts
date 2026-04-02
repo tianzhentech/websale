@@ -6,7 +6,10 @@ import {
   type AccountFormatIssueCode,
   type InvalidBulkAccountLine,
 } from "@/lib/account-format";
-import { readAdminRuntimeConfig } from "@/lib/admin-config";
+import {
+  DEFAULT_OVERVIEW_ACTIVITY_WINDOW_MINUTES,
+  readAdminRuntimeConfig,
+} from "@/lib/admin-config";
 import { readServerEnv } from "@/lib/server-env";
 
 type JsonObject = Record<string, unknown>;
@@ -105,7 +108,7 @@ type OverviewActivityDay = {
 };
 
 type OverviewActivity = {
-  window_days: number;
+  window_minutes: number;
   days: OverviewActivityDay[];
   totals: {
     queued: number;
@@ -135,7 +138,6 @@ const SITE_TITLE_ENV = "PIXEL_WEBSALE_SITE_TITLE";
 const DEFAULT_ADMIN_PASSWORD = "123456";
 const BACKEND_ADMIN_PASSWORD_HEADER = "x-pixel-admin-password";
 const DEFAULT_SITE_TITLE = "Pixel CDK Exchange";
-const OVERVIEW_ACTIVITY_WINDOW_DAYS = 168;
 const OVERVIEW_ACTIVITY_TASK_LIMIT = 500;
 
 const RUN_MODE_LABELS: Record<RunMode, string> = {
@@ -462,12 +464,6 @@ function utcDayKeyFromTimestamp(value: string | null | undefined) {
   return timestamp.toISOString().slice(0, 10);
 }
 
-function addUtcDays(dayKey: string, offset: number) {
-  const date = new Date(`${dayKey}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + offset);
-  return date.toISOString().slice(0, 10);
-}
-
 function emptyOverviewActivityDay(date: string): OverviewActivityDay {
   return {
     date,
@@ -482,18 +478,29 @@ function emptyOverviewActivityDay(date: string): OverviewActivityDay {
 }
 
 function resolveActivityDateKey(task: QueueTask) {
+  const timestamp = resolveActivityTimelineTimestamp(task);
+  if (timestamp === null) {
+    return null;
+  }
+
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function resolveActivityTimelineTimestamp(task: QueueTask) {
   if (task.status === "success" || task.status === "failed" || task.status === "cancelled") {
     return (
-      utcDayKeyFromTimestamp(task.finished_at) ||
-      utcDayKeyFromTimestamp(task.updated_at) ||
-      utcDayKeyFromTimestamp(task.created_at)
+      timestampMs(task.finished_at) ??
+      timestampMs(task.updated_at) ??
+      timestampMs(task.created_at) ??
+      timestampMs(task.started_at)
     );
   }
 
   return (
-    utcDayKeyFromTimestamp(task.created_at) ||
-    utcDayKeyFromTimestamp(task.updated_at) ||
-    utcDayKeyFromTimestamp(task.started_at)
+    timestampMs(task.created_at) ??
+    timestampMs(task.updated_at) ??
+    timestampMs(task.started_at) ??
+    timestampMs(task.finished_at)
   );
 }
 
@@ -507,12 +514,7 @@ function timestampMs(value: string | null | undefined) {
 }
 
 function resolveActivitySequenceTimestamp(task: QueueTask) {
-  return (
-    timestampMs(task.created_at) ??
-    timestampMs(task.started_at) ??
-    timestampMs(task.updated_at) ??
-    timestampMs(task.finished_at)
-  );
+  return resolveActivityTimelineTimestamp(task);
 }
 
 function compareActivitySequence(a: QueueTask, b: QueueTask) {
@@ -554,28 +556,28 @@ function resolveActivityCell(task: QueueTask): OverviewActivityCell {
 
 function buildOverviewActivity(
   tasks: QueueTask[],
-  windowDays = OVERVIEW_ACTIVITY_WINDOW_DAYS
+  windowMinutes = DEFAULT_OVERVIEW_ACTIVITY_WINDOW_MINUTES
 ): OverviewActivity {
-  const endDay = new Date().toISOString().slice(0, 10);
-  const startDay = addUtcDays(endDay, -(windowDays - 1));
+  const endTimestamp = Date.now();
+  const startTimestamp = endTimestamp - windowMinutes * 60 * 1000;
   const dayMap = new Map<string, OverviewActivityDay>();
-
-  for (let offset = 0; offset < windowDays; offset += 1) {
-    const dayKey = addUtcDays(startDay, offset);
-    dayMap.set(dayKey, emptyOverviewActivityDay(dayKey));
-  }
-
   const orderedTasks = [...tasks].sort(compareActivitySequence);
 
   for (const task of orderedTasks) {
-    const dayKey = resolveActivityDateKey(task);
-    if (!dayKey || dayKey < startDay || dayKey > endDay) {
+    const timelineTimestamp = resolveActivityTimelineTimestamp(task);
+    if (timelineTimestamp === null || timelineTimestamp < startTimestamp || timelineTimestamp > endTimestamp) {
       continue;
     }
 
-    const day = dayMap.get(dayKey);
-    if (!day) {
+    const dayKey = resolveActivityDateKey(task);
+    if (!dayKey) {
       continue;
+    }
+
+    let day = dayMap.get(dayKey);
+    if (!day) {
+      day = emptyOverviewActivityDay(dayKey);
+      dayMap.set(dayKey, day);
     }
 
     day.total += 1;
@@ -616,8 +618,8 @@ function buildOverviewActivity(
   );
 
   return {
-    window_days: windowDays,
-    days,
+    window_minutes: windowMinutes,
+    days: days.sort((left, right) => left.date.localeCompare(right.date)),
     totals,
   };
 }
@@ -736,16 +738,20 @@ export async function buildHealthPayload() {
 }
 
 export async function buildOverviewPayload() {
-  const [overview, tasksPayload, backendApiBaseUrl] = await Promise.all([
+  const [overview, tasksPayload, backendApiBaseUrl, adminConfig] = await Promise.all([
     backendRequest("GET", "/api/overview?task_limit=1&device_limit=1&card_limit=1&attempt_limit=1"),
     backendRequest(
       "GET",
       `/api/tasks?limit=${OVERVIEW_ACTIVITY_TASK_LIMIT}&page_size=${OVERVIEW_ACTIVITY_TASK_LIMIT}`
     ).catch(() => ({ tasks: [] })),
     resolveBackendApiBaseUrl(),
+    readAdminRuntimeConfig(),
   ]);
 
-  const activity = buildOverviewActivity(normalizeTaskListPayload(tasksPayload.tasks));
+  const activity = buildOverviewActivity(
+    normalizeTaskListPayload(tasksPayload.tasks),
+    adminConfig.overview_activity_window_minutes
+  );
 
   return {
     generated_at: asOptionalString(overview.generated_at) || utcNow(),

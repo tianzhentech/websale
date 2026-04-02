@@ -51,8 +51,26 @@ type OverviewResponse = {
     tasks_failed?: number;
   };
   activity?: {
+    window_minutes?: number;
     days?: OverviewActivityDay[];
+    totals?: {
+      queued?: number;
+      running?: number;
+      success?: number;
+      failed?: number;
+      cancelled?: number;
+      total?: number;
+    };
   };
+};
+
+type OverviewActivityTotals = {
+  queued: number;
+  running: number;
+  success: number;
+  failed: number;
+  cancelled: number;
+  total: number;
 };
 
 const HEATMAP_ROWS = 6;
@@ -91,19 +109,6 @@ function normalizeActivityCell(cell: OverviewActivityCell): ActiveActivityCell |
   return {
     taskId: asTaskId(cell.task_id),
     tone: cell.tone,
-  };
-}
-
-function createEmptyActivityDay(date: string): NormalizedOverviewActivityDay {
-  return {
-    date,
-    queued: 0,
-    running: 0,
-    success: 0,
-    failed: 0,
-    cancelled: 0,
-    total: 0,
-    cells: [],
   };
 }
 
@@ -216,7 +221,10 @@ function buildTodayCells(
           ...Array.from({ length: runningCount }, () => ({ taskId: null, tone: "running" as const })),
         ];
   const minimumSlots = Math.max(0, slotCount);
-  const visibleColoredCells = coloredCells.slice(0, minimumSlots);
+  const visibleColoredCells =
+    coloredCells.length > minimumSlots
+      ? coloredCells.slice(-minimumSlots)
+      : coloredCells;
 
   return {
     cells: [
@@ -269,7 +277,7 @@ export function ExchangeOverview() {
           runningLegend: "处理中",
           queuedLegend: "排队中",
           queueTaskLabel: "队列任务",
-          totalLabel: "今日总数",
+          totalLabel: "最近 {minutes} 分钟",
           overflowLabel: "更多",
         }
       : {
@@ -286,7 +294,7 @@ export function ExchangeOverview() {
           runningLegend: "Running",
           queuedLegend: "Queued",
           queueTaskLabel: "Task",
-          totalLabel: "Today Total",
+          totalLabel: "Last {minutes} min",
           overflowLabel: "More",
         };
 
@@ -395,19 +403,25 @@ export function ExchangeOverview() {
         : [],
     [overview?.activity?.days]
   );
-
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const todayActivity =
-    normalizedActivityDays.find((day) => day.date === todayKey) || createEmptyActivityDay(todayKey);
-  const failureCount = todayActivity.failed + todayActivity.cancelled;
-  const totalCount = todayActivity.total;
+  const activityWindowMinutes = asCount(overview?.activity?.window_minutes) || 1;
+  const activityTotals: OverviewActivityTotals = {
+    queued: asCount(overview?.activity?.totals?.queued),
+    running: asCount(overview?.activity?.totals?.running),
+    success: asCount(overview?.activity?.totals?.success),
+    failed: asCount(overview?.activity?.totals?.failed),
+    cancelled: asCount(overview?.activity?.totals?.cancelled),
+    total: asCount(overview?.activity?.totals?.total),
+  };
+  const windowCells = normalizedActivityDays.flatMap((day) => day.cells);
+  const failureCount = activityTotals.failed + activityTotals.cancelled;
+  const totalCount = activityTotals.total;
   const heatmapRows = HEATMAP_ROWS;
   const todayCells = buildTodayCells(
-    todayActivity.cells,
-    todayActivity.success,
+    windowCells,
+    activityTotals.success,
     failureCount,
-    todayActivity.queued,
-    todayActivity.running,
+    activityTotals.queued,
+    activityTotals.running,
     heatmapColumns * heatmapRows
   );
   const displayCells = buildColumnMajorDisplayCells(todayCells.cells, heatmapRows, heatmapColumns);
@@ -427,19 +441,19 @@ export function ExchangeOverview() {
   const items = [
     {
       label: copy.runningTasks,
-      value: todayActivity.running,
+      value: activityTotals.running,
     },
     {
       label: copy.queuedTasks,
-      value: todayActivity.queued,
+      value: activityTotals.queued,
     },
     {
       label: copy.successTasks,
-      value: todayActivity.success,
+      value: activityTotals.success,
     },
     {
       label: copy.failedTasks,
-      value: todayActivity.failed,
+      value: activityTotals.failed,
     },
   ];
 
@@ -488,7 +502,7 @@ export function ExchangeOverview() {
             ))}
           </div>
           <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-            {copy.totalLabel}: {totalCount}
+            {copy.totalLabel.replace("{minutes}", String(activityWindowMinutes))}: {totalCount}
             {todayCells.overflowCount ? ` · +${todayCells.overflowCount} ${copy.overflowLabel}` : ""}
           </div>
         </div>
@@ -502,7 +516,7 @@ export function ExchangeOverview() {
 
             return (
               <div
-                key={`${todayActivity.date}-${index}`}
+                key={`window-${activityWindowMinutes}-${index}`}
                 className={classNames(
                   "activity-cell",
                   cell.tone !== "empty" && "activity-cell-active"

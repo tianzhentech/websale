@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
+  DEFAULT_OVERVIEW_ACTIVITY_WINDOW_MINUTES,
   normalizeBackendApiBaseUrl,
+  normalizeOverviewActivityWindowMinutes,
   readAdminRuntimeConfig,
   writeAdminRuntimeConfig,
 } from "@/lib/admin-config";
@@ -24,6 +26,7 @@ type AdminConfigPayload = {
   backend_api_password?: string | null;
   extract_link_enabled?: boolean;
   subscription_enabled?: boolean;
+  overview_activity_window_minutes?: number | string | null;
 };
 
 function resolveRouteLanguage(request: NextRequest) {
@@ -57,8 +60,10 @@ async function buildResponsePayload() {
     backend_api_password_override: config.backend_api_password,
     extract_link_enabled: config.extract_link_enabled,
     subscription_enabled: config.subscription_enabled,
+    overview_activity_window_minutes: config.overview_activity_window_minutes,
     default_backend_api_base_url: defaultBackendApiBaseUrl,
     default_backend_api_password: defaultBackendApiPassword,
+    default_overview_activity_window_minutes: DEFAULT_OVERVIEW_ACTIVITY_WINDOW_MINUTES,
     updated_at: config.updated_at,
   };
 }
@@ -100,6 +105,10 @@ export async function PUT(request: NextRequest) {
       typeof payload?.subscription_enabled === "boolean"
         ? payload.subscription_enabled
         : undefined;
+    const overviewActivityWindowMinutes =
+      payload?.overview_activity_window_minutes === undefined
+        ? undefined
+        : normalizeOverviewActivityWindowMinutes(payload.overview_activity_window_minutes);
 
     await writeAdminRuntimeConfig({
       backend_api_base_url:
@@ -112,6 +121,7 @@ export async function PUT(request: NextRequest) {
           : normalizedRequestedBackendApiPassword,
       extract_link_enabled: extractLinkEnabled,
       subscription_enabled: subscriptionEnabled,
+      overview_activity_window_minutes: overviewActivityWindowMinutes,
     });
 
     return NextResponse.json(await buildResponsePayload());
