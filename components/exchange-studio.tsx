@@ -2332,28 +2332,35 @@ function EnqueueHistoryPanel({
                     <div className="notice notice-error">{copy.queueHistoryCopyFailed}</div>
                   ) : null}
 
-                  {items.length ? (
-                    <div className="max-h-[18rem] overflow-y-auto pr-1">
-                      <div className="grid gap-0">
-                        {items.map((item, index) => (
-                          <div
-                            key={`${column}-${item.task_id}`}
-                            className={classNames(
-                              "px-1 py-3",
-                              index > 0 && "border-t"
-                            )}
-                            style={index > 0 ? { borderColor: "var(--surface-border)" } : undefined}
-                          >
-                            <div className="break-all font-mono text-xs leading-6 text-[var(--ink)] whitespace-pre-wrap">
-                              {item.raw_account}
+                  <div
+                    className="surface-ghost min-h-[12rem] rounded-[1.5rem] border p-4"
+                    style={{ borderColor: "var(--surface-border-strong)" }}
+                  >
+                    {items.length ? (
+                      <div className="max-h-[18rem] overflow-y-auto pr-1">
+                        <div className="grid gap-0">
+                          {items.map((item, index) => (
+                            <div
+                              key={`${column}-${item.task_id}`}
+                              className={classNames(
+                                "py-3 text-left",
+                                index > 0 && "border-t"
+                              )}
+                              style={index > 0 ? { borderColor: "var(--surface-border)" } : undefined}
+                            >
+                              <div className="break-all font-mono text-xs leading-6 text-[var(--ink)] whitespace-pre-wrap">
+                                {item.raw_account}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="empty-panel min-h-[12rem]">{emptyLabel}</div>
-                  )}
+                    ) : (
+                      <div className="flex min-h-[calc(12rem-2rem)] items-center justify-center text-center text-[var(--muted)] leading-8">
+                        {emptyLabel}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
