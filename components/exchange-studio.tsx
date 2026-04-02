@@ -2571,7 +2571,7 @@ function EnqueueHistoryPanel({
     : [];
 
   return (
-    <div className="grid h-full min-h-0 gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
           {copy.queueHistory}
