@@ -2213,41 +2213,24 @@ export function ExchangeStudio() {
                   return (
                     <div
                       key={item.id}
-                      className="flex items-stretch gap-2"
+                      className={classNames(
+                        "surface-card rounded-[1rem] border transition",
+                        isSelected
+                          ? "border-[rgba(18,92,95,0.24)] bg-[rgba(18,92,95,0.08)]"
+                          : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] hover:border-[rgba(18,92,95,0.16)]"
+                      )}
                     >
-                      {isFailedItem ? (
+                      <div className="flex items-start gap-3 px-3 py-3">
                         <button
                           type="button"
-                          onClick={() => buildSingleRetryConfirmation(item)}
-                          disabled={!canRetryItem || isPending}
-                          className={classNames(
-                            "min-w-[4.8rem] rounded-[1rem] px-3 text-sm font-semibold",
-                            !canRetryItem || isPending
-                              ? "theme-button-disabled"
-                              : "theme-button-secondary"
-                          )}
+                          onClick={() => setSelectedTaskId(item.id)}
+                          className="min-w-0 flex-1 grid gap-1 text-left"
                         >
-                          {copy.retryTask}
-                        </button>
-                      ) : null}
-
-                      <button
-                        type="button"
-                        onClick={() => setSelectedTaskId(item.id)}
-                        className={classNames(
-                          "surface-card min-w-0 flex-1 grid gap-1 rounded-[1rem] border px-3 py-3 text-left transition",
-                          isSelected
-                            ? "border-[rgba(18,92,95,0.24)] bg-[rgba(18,92,95,0.08)]"
-                            : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] hover:border-[rgba(18,92,95,0.16)]"
-                        )}
-                      >
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-sm font-semibold text-[var(--ink)]">
                             #{item.id} {item.email}
                           </span>
-                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
-                            {itemTaskStatusLabel}
-                          </span>
+                          <span className="sr-only">{itemTaskStatusLabel}</span>
                         </div>
                         <div className="text-xs text-[var(--muted)]">
                           {copy.chargeStatusPrefix}
@@ -2265,7 +2248,29 @@ export function ExchangeStudio() {
                             {itemChargeError}
                           </div>
                         ) : null}
-                      </button>
+                        </button>
+
+                        <div className="flex shrink-0 items-start gap-2">
+                          {isFailedItem ? (
+                            <button
+                              type="button"
+                              onClick={() => buildSingleRetryConfirmation(item)}
+                              disabled={!canRetryItem || isPending}
+                              className={classNames(
+                                "min-w-[3.75rem] rounded-full px-3 py-1.5 text-xs font-semibold",
+                                !canRetryItem || isPending
+                                  ? "theme-button-disabled"
+                                  : "theme-button-secondary"
+                              )}
+                            >
+                              {copy.retryTask}
+                            </button>
+                          ) : null}
+                          <span className="pt-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
+                            {itemTaskStatusLabel}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
