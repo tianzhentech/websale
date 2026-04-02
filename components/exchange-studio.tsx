@@ -127,7 +127,37 @@ type EnqueueHistoryCopyFeedback = {
   status: "copied" | "failed";
 };
 
+type RetryConfirmationItem = {
+  taskId: number;
+  email: string;
+  taskLabel: string;
+  rawAccountLine: string;
+  formattedAccountLine: string | null;
+  cdkCode: string | null;
+  runMode: RunMode | null;
+  taskError: string | null;
+  chargeError: string | null;
+  taskStatusLabel: string;
+  selected: boolean;
+  selectable: boolean;
+  unavailableReason: string | null;
+};
+
 type RetryConfirmationState = {
+  scope: "single" | "batch";
+  failedCount: number;
+  items: RetryConfirmationItem[];
+};
+
+type RetrySource = {
+  cdkCode: string;
+  runMode: RunMode;
+  accountMode: AccountMode;
+  rawAccountLine: string;
+  formattedAccountLine: string;
+};
+
+type RetryExecutionPlan = {
   scope: "single" | "batch";
   cdkCode: string;
   runMode: RunMode;
@@ -137,12 +167,11 @@ type RetryConfirmationState = {
   taskLabel?: string;
 };
 
-type RetrySource = {
-  cdkCode: string;
-  runMode: RunMode;
-  accountMode: AccountMode;
-  rawAccountLine: string;
-  formattedAccountLine: string;
+type RetryConfirmationEvaluation = {
+  selectedCount: number;
+  selectableCount: number;
+  error: string | null;
+  plan: RetryExecutionPlan | null;
 };
 
 type ConfigResponse = {
@@ -254,8 +283,16 @@ const LANGUAGE_COPY = {
     retryConfirmDescriptionBatch: "将使用当前浏览器保存的原始账号记录，重新提交本次所有失败任务。",
     retryConfirmTaskLabel: "任务",
     retryConfirmFailedCountLabel: "失败数量",
+    retryConfirmSelectedCountLabel: "已选数量",
     retryConfirmModeLabel: "模式",
     retryConfirmCdkLabel: "卡密",
+    retryConfirmSelectionLabel: "可重排账号",
+    retryConfirmAccountLabel: "账号记录",
+    retryConfirmFailureLabel: "失败记录",
+    retryConfirmSelectAll: "全选可重排",
+    retryConfirmClearAll: "清空选择",
+    retryConfirmUnavailable: "当前不可重排",
+    retryConfirmSelectAtLeastOne: "请至少选择 1 个可重排的失败账号。",
     retryConfirmAction: "确认重排",
     cancel: "取消",
     retryNoFailedTasks: "当前没有可重排的失败任务。",
@@ -442,8 +479,16 @@ const LANGUAGE_COPY = {
     retryConfirmDescriptionBatch: "This will re-submit all failed tasks from this batch using the original account records saved in this browser.",
     retryConfirmTaskLabel: "Task",
     retryConfirmFailedCountLabel: "Failed",
+    retryConfirmSelectedCountLabel: "Selected",
     retryConfirmModeLabel: "Mode",
     retryConfirmCdkLabel: "CDK",
+    retryConfirmSelectionLabel: "Retry Accounts",
+    retryConfirmAccountLabel: "Account Record",
+    retryConfirmFailureLabel: "Failure Record",
+    retryConfirmSelectAll: "Select All",
+    retryConfirmClearAll: "Clear Selection",
+    retryConfirmUnavailable: "Unavailable",
+    retryConfirmSelectAtLeastOne: "Select at least one retryable failed account.",
     retryConfirmAction: "Confirm Retry",
     cancel: "Cancel",
     retryNoFailedTasks: "There are no failed tasks to retry right now.",
@@ -671,6 +716,10 @@ function isFailedTaskStatus(status: string) {
   return !["queued", "running", "success"].includes(status);
 }
 
+function getTaskStatusLabel(copy: ExchangeStudioCopy, status: string) {
+  return copy.taskStatuses[status as keyof typeof copy.taskStatuses] || status;
+}
+
 function mergeTaskSnapshots(currentTasks: QueueTask[], refreshedTasks: QueueTask[]) {
   if (!refreshedTasks.length) {
     return currentTasks;
@@ -828,6 +877,91 @@ function formatInvalidBulkLinesMessage(
   return `${details}${suffix}`;
 }
 
+function buildRetryConfirmationItem(
+  task: QueueTask,
+  source: RetrySource | null,
+  copy: ExchangeStudioCopy
+): RetryConfirmationItem {
+  return {
+    taskId: task.id,
+    email: task.email,
+    taskLabel: `#${task.id} ${task.email}`,
+    rawAccountLine: source?.rawAccountLine || buildFallbackHistoryRawAccount(task),
+    formattedAccountLine: source?.formattedAccountLine || null,
+    cdkCode: source?.cdkCode || null,
+    runMode: source?.runMode || null,
+    taskError: task.error_message?.trim() || null,
+    chargeError: task.cdk_charge_error?.trim() || null,
+    taskStatusLabel: getTaskStatusLabel(copy, task.status),
+    selected: Boolean(source),
+    selectable: Boolean(source),
+    unavailableReason: source ? null : copy.retryMissingTaskSource,
+  };
+}
+
+function evaluateRetryConfirmation(
+  confirmation: RetryConfirmationState | null,
+  copy: ExchangeStudioCopy
+): RetryConfirmationEvaluation {
+  if (!confirmation) {
+    return {
+      selectedCount: 0,
+      selectableCount: 0,
+      error: null,
+      plan: null,
+    };
+  }
+
+  const selectableItems = confirmation.items.filter((item) => item.selectable);
+  const selectedItems = selectableItems.filter(
+    (item) =>
+      item.selected &&
+      Boolean(item.formattedAccountLine) &&
+      Boolean(item.cdkCode) &&
+      Boolean(item.runMode)
+  );
+
+  if (!selectedItems.length) {
+    return {
+      selectedCount: 0,
+      selectableCount: selectableItems.length,
+      error: copy.retryConfirmSelectAtLeastOne,
+      plan: null,
+    };
+  }
+
+  const firstItem = selectedItems[0];
+  if (
+    selectedItems.some(
+      (item) => item.cdkCode !== firstItem.cdkCode || item.runMode !== firstItem.runMode
+    )
+  ) {
+    return {
+      selectedCount: selectedItems.length,
+      selectableCount: selectableItems.length,
+      error: copy.retrySourceMismatch,
+      plan: null,
+    };
+  }
+
+  return {
+    selectedCount: selectedItems.length,
+    selectableCount: selectableItems.length,
+    error: null,
+    plan: {
+      scope: selectedItems.length === 1 ? "single" : "batch",
+      cdkCode: firstItem.cdkCode || "",
+      runMode: firstItem.runMode || "extract_link",
+      accountMode: selectedItems.length === 1 ? "single" : "bulk",
+      rawAccountLines: selectedItems
+        .map((item) => item.formattedAccountLine || "")
+        .filter(Boolean),
+      failedCount: selectedItems.length,
+      taskLabel: selectedItems.length === 1 ? selectedItems[0].taskLabel : undefined,
+    },
+  };
+}
+
 function buildTaskDetailSyncKey(task?: QueueTask | null) {
   if (!task) {
     return "";
@@ -963,6 +1097,18 @@ export function ExchangeStudio() {
 
     return nextLookup;
   }, [enqueueHistory]);
+  const failedTasks = useMemo(
+    () => taskList.filter((item) => isFailedTaskStatus(item.status)),
+    [taskList]
+  );
+  const hasRetriableFailedTasks = useMemo(
+    () => failedTasks.some((item) => retrySourceByTaskId.has(item.id)),
+    [failedTasks, retrySourceByTaskId]
+  );
+  const retrySelection = useMemo(
+    () => evaluateRetryConfirmation(retryConfirmation, copy),
+    [copy, retryConfirmation]
+  );
   const normalizedCode = code.trim();
 
   useEffect(() => {
@@ -1540,7 +1686,7 @@ export function ExchangeStudio() {
     );
   };
 
-  const queueRetryTasks = async (plan: RetryConfirmationState) => {
+  const queueRetryTasks = async (plan: RetryExecutionPlan) => {
     const normalizedCode = plan.cdkCode.trim();
     const normalizedLines = plan.rawAccountLines.map((line) => line.trim()).filter(Boolean);
 
@@ -1632,44 +1778,26 @@ export function ExchangeStudio() {
     setMessage(null);
     setRetryConfirmation({
       scope: "single",
-      cdkCode: source.cdkCode,
-      runMode: source.runMode,
-      accountMode: "single",
-      rawAccountLines: [source.formattedAccountLine],
       failedCount: 1,
-      taskLabel: `#${targetTask.id} ${targetTask.email}`,
+      items: [buildRetryConfirmationItem(targetTask, source, copy)],
     });
   };
 
   const buildBatchRetryConfirmation = () => {
-    const failedTasks = taskList.filter((item) => isFailedTaskStatus(item.status));
     if (!failedTasks.length) {
       setError(copy.retryNoFailedTasks);
       return;
     }
 
-    const sources = failedTasks.map((item) => ({
-      task: item,
-      source: retrySourceByTaskId.get(item.id) || null,
-    }));
+    const items = failedTasks.map((item) =>
+      buildRetryConfirmationItem(item, retrySourceByTaskId.get(item.id) || null, copy)
+    );
+    const firstSelectableItem = items.find(
+      (item) => item.selectable && item.cdkCode && item.runMode
+    );
 
-    if (sources.some((item) => !item.source)) {
+    if (!items.some((item) => item.selectable)) {
       setError(copy.retryMissingBatchSource);
-      return;
-    }
-
-    const resolvedSources = sources
-      .map((item) => item.source)
-      .filter((item): item is RetrySource => Boolean(item));
-    const firstSource = resolvedSources[0];
-
-    if (
-      !firstSource ||
-      resolvedSources.some(
-        (item) => item.cdkCode !== firstSource.cdkCode || item.runMode !== firstSource.runMode
-      )
-    ) {
-      setError(copy.retrySourceMismatch);
       return;
     }
 
@@ -1677,28 +1805,85 @@ export function ExchangeStudio() {
     setMessage(null);
     setRetryConfirmation({
       scope: "batch",
-      cdkCode: firstSource.cdkCode,
-      runMode: firstSource.runMode,
-      accountMode: "bulk",
-      rawAccountLines: resolvedSources.map((item) => item.formattedAccountLine),
-      failedCount: resolvedSources.length,
+      failedCount: failedTasks.length,
+      items: firstSelectableItem
+        ? items.map((item) =>
+            item.selectable
+              ? {
+                  ...item,
+                  selected:
+                    item.cdkCode === firstSelectableItem.cdkCode &&
+                    item.runMode === firstSelectableItem.runMode,
+                }
+              : item
+          )
+        : items,
     });
   };
 
   const handleConfirmRetry = () => {
-    if (!retryConfirmation) {
+    if (!retryConfirmation || !retrySelection.plan) {
+      setError(retrySelection.error || copy.retryConfirmSelectAtLeastOne);
       return;
     }
+    const retryPlan = retrySelection.plan;
 
     startTransition(async () => {
       try {
         setError(null);
         setMessage(null);
-        await queueRetryTasks(retryConfirmation);
+        await queueRetryTasks(retryPlan);
         setRetryConfirmation(null);
       } catch (nextError) {
         setError(nextError instanceof Error ? nextError.message : copy.submitFailed);
       }
+    });
+  };
+
+  const handleRetryItemSelectionChange = (taskId: number, selected: boolean) => {
+    setRetryConfirmation((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        items: current.items.map((item) =>
+          item.taskId === taskId && item.selectable
+            ? { ...item, selected }
+            : item
+        ),
+      };
+    });
+  };
+
+  const handleSelectAllRetryItems = () => {
+    setRetryConfirmation((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        items: current.items.map((item) =>
+          item.selectable ? { ...item, selected: true } : item
+        ),
+      };
+    });
+  };
+
+  const handleClearRetryItems = () => {
+    setRetryConfirmation((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        items: current.items.map((item) =>
+          item.selectable ? { ...item, selected: false } : item
+        ),
+      };
     });
   };
 
@@ -1830,25 +2015,6 @@ export function ExchangeStudio() {
       ? task.success_message
       : null;
   const showBusinessResultPanel = task?.run_mode === "extract_link" && task.status === "success";
-  const canRetryAllFailedTasks = useMemo(() => {
-    const failedTasks = taskList.filter((item) => isFailedTaskStatus(item.status));
-    if (!failedTasks.length) {
-      return false;
-    }
-
-    const resolvedSources = failedTasks
-      .map((item) => retrySourceByTaskId.get(item.id) || null)
-      .filter((item): item is RetrySource => Boolean(item));
-
-    if (resolvedSources.length !== failedTasks.length) {
-      return false;
-    }
-
-    const firstSource = resolvedSources[0];
-    return resolvedSources.every(
-      (item) => item.cdkCode === firstSource.cdkCode && item.runMode === firstSource.runMode
-    );
-  }, [retrySourceByTaskId, taskList]);
   const cdkSummaryText = detail
     ? isChinese
       ? `${copy.cdkStatuses[detail.cdk.status as keyof typeof copy.cdkStatuses] || detail.status_label} · 可用 ${detail.cdk.available_amount} · 预留 ${detail.cdk.reserved_amount} · 总余额 ${detail.cdk.remaining_amount}`
@@ -2171,9 +2337,9 @@ export function ExchangeStudio() {
               <button
                 type="button"
                 onClick={buildBatchRetryConfirmation}
-                disabled={!canRetryAllFailedTasks || isPending}
+                disabled={!hasRetriableFailedTasks || isPending}
                 className={classNames(
-                  !canRetryAllFailedTasks || isPending
+                  !hasRetriableFailedTasks || isPending
                     ? "theme-button-disabled"
                     : "theme-button-secondary"
                 )}
@@ -2421,7 +2587,11 @@ export function ExchangeStudio() {
         confirmation={retryConfirmation}
         copy={copy}
         isPending={isPending}
+        selection={retrySelection}
         onClose={() => setRetryConfirmation(null)}
+        onToggleItem={handleRetryItemSelectionChange}
+        onSelectAll={handleSelectAllRetryItems}
+        onClearAll={handleClearRetryItems}
         onConfirm={handleConfirmRetry}
       />
     </>
@@ -2732,14 +2902,22 @@ function RetryConfirmDialog({
   confirmation,
   copy,
   isPending,
+  selection,
   onClose,
+  onToggleItem,
+  onSelectAll,
+  onClearAll,
   onConfirm,
 }: {
   open: boolean;
   confirmation: RetryConfirmationState | null;
   copy: ExchangeStudioCopy;
   isPending: boolean;
+  selection: RetryConfirmationEvaluation;
   onClose: () => void;
+  onToggleItem: (taskId: number, selected: boolean) => void;
+  onSelectAll: () => void;
+  onClearAll: () => void;
   onConfirm: () => void;
 }) {
   if (!open || !confirmation) {
@@ -2752,8 +2930,14 @@ function RetryConfirmDialog({
     confirmation.scope === "single"
       ? copy.retryConfirmDescriptionSingle
       : copy.retryConfirmDescriptionBatch;
-  const runModeLabel =
-    copy.runModeLabels[confirmation.runMode] || confirmation.runMode;
+  const runModeLabel = selection.plan
+    ? copy.runModeLabels[selection.plan.runMode] || selection.plan.runMode
+    : copy.emDash;
+  const taskLabel =
+    confirmation.scope === "single"
+      ? selection.plan?.taskLabel || confirmation.items[0]?.taskLabel || null
+      : null;
+  const canConfirm = Boolean(selection.plan) && !isPending;
 
   return (
     <div
@@ -2783,13 +2967,13 @@ function RetryConfirmDialog({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          {confirmation.taskLabel ? (
+          {taskLabel ? (
             <div className="surface-card rounded-[1.2rem] border p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                 {copy.retryConfirmTaskLabel}
               </div>
               <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
-                {confirmation.taskLabel}
+                {taskLabel}
               </div>
             </div>
           ) : null}
@@ -2801,6 +2985,16 @@ function RetryConfirmDialog({
               {confirmation.failedCount}
             </div>
           </div>
+          {confirmation.scope === "batch" ? (
+            <div className="surface-card rounded-[1.2rem] border p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                {copy.retryConfirmSelectedCountLabel}
+              </div>
+              <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
+                {selection.selectedCount}
+              </div>
+            </div>
+          ) : null}
           <div className="surface-card rounded-[1.2rem] border p-4">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
               {copy.retryConfirmModeLabel}
@@ -2814,7 +3008,147 @@ function RetryConfirmDialog({
               {copy.retryConfirmCdkLabel}
             </div>
             <div className="mt-2 break-all font-mono text-sm font-semibold text-[var(--ink)]">
-              {confirmation.cdkCode}
+              {selection.plan?.cdkCode || copy.emDash}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-[1.2rem] border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                {copy.retryConfirmSelectionLabel}
+              </div>
+              <div className="mt-1 text-sm text-[var(--muted)]">
+                {confirmation.scope === "batch"
+                  ? `${selection.selectedCount} / ${selection.selectableCount}`
+                  : confirmation.items[0]?.email || copy.emDash}
+              </div>
+            </div>
+
+            {confirmation.scope === "batch" ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onSelectAll}
+                  disabled={isPending || selection.selectableCount === 0}
+                  className={classNames(
+                    isPending || selection.selectableCount === 0
+                      ? "theme-button-disabled"
+                      : "theme-button-surface"
+                  )}
+                >
+                  {copy.retryConfirmSelectAll}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClearAll}
+                  disabled={isPending || selection.selectableCount === 0}
+                  className={classNames(
+                    isPending || selection.selectableCount === 0
+                      ? "theme-button-disabled"
+                      : "theme-button-surface"
+                  )}
+                >
+                  {copy.retryConfirmClearAll}
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          {selection.error ? (
+            <div className="notice notice-error">{selection.error}</div>
+          ) : null}
+
+          <div
+            className="surface-ghost max-h-[24rem] overflow-y-auto rounded-[1rem] border p-2.5"
+            style={{ borderColor: "var(--surface-border-strong)" }}
+          >
+            <div className="grid gap-2">
+              {confirmation.items.map((item) => {
+                const itemHasFailureDetail = Boolean(item.taskError || item.chargeError);
+                return (
+                  <label
+                    key={item.taskId}
+                    className={classNames(
+                      "surface-card grid gap-3 rounded-[1rem] border p-3 transition",
+                      item.selected && item.selectable
+                        ? "border-[rgba(18,92,95,0.28)] bg-[rgba(18,92,95,0.08)]"
+                        : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)]",
+                      item.selectable && !isPending ? "cursor-pointer" : "cursor-default"
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      {confirmation.scope === "batch" ? (
+                        <input
+                          type="checkbox"
+                          checked={item.selected}
+                          disabled={!item.selectable || isPending}
+                          onChange={(event) =>
+                            onToggleItem(item.taskId, event.target.checked)
+                          }
+                          className="mt-1 h-4 w-4 accent-[var(--teal)]"
+                        />
+                      ) : null}
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-sm font-semibold text-[var(--ink)]">
+                            {item.taskLabel}
+                          </div>
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
+                            {item.taskStatusLabel}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-[0.9rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                              {copy.retryConfirmAccountLabel}
+                            </div>
+                            <div className="mt-2 break-all font-mono text-xs leading-6 text-[var(--ink)] whitespace-pre-wrap">
+                              {item.rawAccountLine}
+                            </div>
+                          </div>
+
+                          <div className="rounded-[0.9rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                              {copy.retryConfirmFailureLabel}
+                            </div>
+                            <div className="mt-2 grid gap-1.5 text-xs leading-6 text-[#973d2c]">
+                              {item.taskError ? (
+                                <div>
+                                  {copy.taskError}
+                                  {item.taskError}
+                                </div>
+                              ) : null}
+                              {item.chargeError ? (
+                                <div>
+                                  {copy.chargeError}
+                                  {item.chargeError}
+                                </div>
+                              ) : null}
+                              {!itemHasFailureDetail ? (
+                                <div className="text-[var(--muted)]">
+                                  {item.taskStatusLabel}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        {!item.selectable && item.unavailableReason ? (
+                          <div className="mt-3 notice notice-error">
+                            {copy.retryConfirmUnavailable}
+                            {" · "}
+                            {item.unavailableReason}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -2833,9 +3167,9 @@ function RetryConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={isPending}
+            disabled={!canConfirm}
             className={classNames(
-              isPending ? "theme-button-disabled" : "theme-button-primary"
+              !canConfirm ? "theme-button-disabled" : "theme-button-primary"
             )}
           >
             {isPending ? copy.working : copy.retryConfirmAction}
