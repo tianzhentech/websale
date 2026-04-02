@@ -2571,7 +2571,7 @@ function EnqueueHistoryPanel({
     : [];
 
   return (
-    <div className="grid gap-5">
+    <div className="grid min-h-full gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
           {copy.queueHistory}
@@ -2581,12 +2581,12 @@ function EnqueueHistoryPanel({
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)]">
+      <div className="grid min-h-0 items-stretch gap-5 xl:grid-cols-[minmax(16rem,0.72fr)_minmax(0,1.28fr)]">
         <div
-          className="grid gap-3 xl:border-r xl:pr-5"
+          className="grid min-h-0 xl:border-r xl:pr-5"
           style={{ borderColor: "var(--surface-border)" }}
         >
-          <div className="max-h-[24rem] overflow-y-auto pr-1">
+          <div className="min-h-0 h-full overflow-y-auto pr-1">
             <div className="grid gap-2">
               {orderedRecords.map((record) => {
                 const isSelected = selectedRecord?.id === record.id;
@@ -2643,7 +2643,7 @@ function EnqueueHistoryPanel({
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4">
             {([
               ["success", copy.queueHistorySuccess, successItems, copy.queueHistoryNoSuccess],
               ["failed", copy.queueHistoryFailed, failedItems, copy.queueHistoryNoFailed],
