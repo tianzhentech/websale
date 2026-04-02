@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import {
   isGmailAddress,
+  validateBulkAccountLine,
   validateBulkAccountText,
   type AccountFormatIssueCode,
 } from "@/lib/account-format";
@@ -126,6 +127,24 @@ type EnqueueHistoryCopyFeedback = {
   status: "copied" | "failed";
 };
 
+type RetryConfirmationState = {
+  scope: "single" | "batch";
+  cdkCode: string;
+  runMode: RunMode;
+  accountMode: AccountMode;
+  rawAccountLines: string[];
+  failedCount: number;
+  taskLabel?: string;
+};
+
+type RetrySource = {
+  cdkCode: string;
+  runMode: RunMode;
+  accountMode: AccountMode;
+  rawAccountLine: string;
+  formattedAccountLine: string;
+};
+
 type ConfigResponse = {
   site_title: string;
   backend_api_base_url: string;
@@ -227,6 +246,24 @@ const LANGUAGE_COPY = {
     queueHistoryCopy: "复制账号",
     queueHistoryCopied: "已复制",
     queueHistoryCopyFailed: "复制失败，请手动选中账号内容。",
+    retryTask: "重排",
+    retryAllFailed: "一键重排",
+    retryConfirmTitleSingle: "确认重排失败任务",
+    retryConfirmTitleBatch: "确认一键重排失败任务",
+    retryConfirmDescriptionSingle: "将使用当前浏览器保存的原始账号记录，重新提交这个失败任务。",
+    retryConfirmDescriptionBatch: "将使用当前浏览器保存的原始账号记录，重新提交本次所有失败任务。",
+    retryConfirmTaskLabel: "任务",
+    retryConfirmFailedCountLabel: "失败数量",
+    retryConfirmModeLabel: "模式",
+    retryConfirmCdkLabel: "卡密",
+    retryConfirmAction: "确认重排",
+    cancel: "取消",
+    retryNoFailedTasks: "当前没有可重排的失败任务。",
+    retryMissingTaskSource: "找不到这个失败任务的原始账号记录，暂时无法重排。",
+    retryMissingBatchSource: "本次失败任务缺少原始账号记录，暂时无法一键重排。",
+    retrySourceMismatch: "失败任务的卡密或模式不一致，暂时无法一起重排。",
+    retryQueuedSingle: "已重新入队 1 个失败任务。后端执行成功后会自动从 CDK 中扣除 {amount} 额度。",
+    retryQueuedBatch: "已重新入队 {count} 个失败任务。后端每成功执行 1 个 {mode} 任务，就会自动从 CDK 中扣除 {amount} 额度。",
     previousPage: "上一页",
     nextPage: "下一页",
     taskListPage: "第 {current} / {total} 页",
@@ -397,6 +434,24 @@ const LANGUAGE_COPY = {
     queueHistoryCopy: "Copy Accounts",
     queueHistoryCopied: "Copied",
     queueHistoryCopyFailed: "Copy failed. Please select the account lines manually.",
+    retryTask: "Retry",
+    retryAllFailed: "Retry Failed",
+    retryConfirmTitleSingle: "Retry this failed task",
+    retryConfirmTitleBatch: "Retry all failed tasks",
+    retryConfirmDescriptionSingle: "This will re-submit the failed task using the original account record saved in this browser.",
+    retryConfirmDescriptionBatch: "This will re-submit all failed tasks from this batch using the original account records saved in this browser.",
+    retryConfirmTaskLabel: "Task",
+    retryConfirmFailedCountLabel: "Failed",
+    retryConfirmModeLabel: "Mode",
+    retryConfirmCdkLabel: "CDK",
+    retryConfirmAction: "Confirm Retry",
+    cancel: "Cancel",
+    retryNoFailedTasks: "There are no failed tasks to retry right now.",
+    retryMissingTaskSource: "The original account record for this failed task is unavailable, so it cannot be retried yet.",
+    retryMissingBatchSource: "Some failed tasks in this batch are missing original account records, so bulk retry is unavailable.",
+    retrySourceMismatch: "The failed tasks do not share the same CDK or mode, so they cannot be retried together.",
+    retryQueuedSingle: "Re-queued 1 failed task. After the backend succeeds, {amount} credits will be charged from the CDK automatically.",
+    retryQueuedBatch: "Re-queued {count} failed tasks. Each successful {mode} task will automatically deduct {amount} credits from the CDK.",
     previousPage: "Previous",
     nextPage: "Next",
     taskListPage: "Page {current} / {total}",
@@ -837,6 +892,8 @@ export function ExchangeStudio() {
   const [copyFeedback, setCopyFeedback] = useState<"copied" | "failed" | null>(null);
   const [queueHistoryCopyFeedback, setQueueHistoryCopyFeedback] =
     useState<EnqueueHistoryCopyFeedback | null>(null);
+  const [retryConfirmation, setRetryConfirmation] =
+    useState<RetryConfirmationState | null>(null);
   const taskListRef = useRef<QueueTask[]>([]);
   const taskDetailSyncKeyRef = useRef("");
   const [isPending, startTransition] = useTransition();
@@ -878,6 +935,34 @@ export function ExchangeStudio() {
     }
     return enqueueHistory[0] ?? null;
   }, [enqueueHistory, selectedQueueHistoryId]);
+  const retrySourceByTaskId = useMemo(() => {
+    const nextLookup = new Map<number, RetrySource>();
+
+    for (const record of enqueueHistory) {
+      for (const item of record.items) {
+        const rawAccountLine = item.raw_account.trim();
+        const validation = validateBulkAccountLine(rawAccountLine, 1);
+        if (!validation.ok) {
+          continue;
+        }
+
+        const cdkCode = record.cdk_code.trim() || item.task.cdk_code?.trim() || "";
+        if (!cdkCode) {
+          continue;
+        }
+
+        nextLookup.set(item.task.id, {
+          cdkCode,
+          runMode: record.run_mode,
+          accountMode: record.account_mode,
+          rawAccountLine,
+          formattedAccountLine: validation.formatted,
+        });
+      }
+    }
+
+    return nextLookup;
+  }, [enqueueHistory]);
   const normalizedCode = code.trim();
 
   useEffect(() => {
@@ -1263,7 +1348,8 @@ export function ExchangeStudio() {
     }
   }, [accountMode]);
 
-  const hasModalOpen = isDetailDialogOpen || isBulkEditorOpen || isQueueHistoryOpen;
+  const hasModalOpen =
+    isDetailDialogOpen || isBulkEditorOpen || isQueueHistoryOpen || retryConfirmation !== null;
 
   useEffect(() => {
     if (!hasModalOpen) {
@@ -1280,6 +1366,7 @@ export function ExchangeStudio() {
         setIsDetailDialogOpen(false);
         setIsBulkEditorOpen(false);
         setIsQueueHistoryOpen(false);
+        setRetryConfirmation(null);
       }
     };
 
@@ -1289,7 +1376,7 @@ export function ExchangeStudio() {
       document.documentElement.style.overflow = previousHtmlOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [hasModalOpen]);
+  }, [hasModalOpen, retryConfirmation]);
 
   const modeFallback = useMemo(
     () => (config?.run_modes?.length ? config.run_modes : defaultRunModes),
@@ -1377,6 +1464,242 @@ export function ExchangeStudio() {
     } finally {
       setIsBulkFormatting(false);
     }
+  };
+
+  const applyQueuedExchangeResult = ({
+    response,
+    cdkCode,
+    runMode,
+    accountMode,
+    rawAccountLines,
+    messageKind,
+  }: {
+    response: ExchangeResponse;
+    cdkCode: string;
+    runMode: RunMode;
+    accountMode: AccountMode;
+    rawAccountLines: string[];
+    messageKind: "initial" | "retrySingle" | "retryBatch";
+  }) => {
+    setCode(cdkCode);
+    setTaskList(response.tasks);
+    setSelectedTaskId(response.tasks[0]?.id ?? null);
+    setCurrentTaskPage(1);
+    setDetail(response.detail);
+
+    const nextHistoryRecord = buildEnqueueHistoryRecord({
+      createdAt: response.generated_at,
+      cdkCode,
+      runMode,
+      accountMode,
+      tasks: response.tasks,
+      rawAccounts: rawAccountLines,
+      normalizedLines: response.normalized_lines,
+    });
+    if (nextHistoryRecord) {
+      setEnqueueHistory((currentRecords) =>
+        [nextHistoryRecord, ...currentRecords].slice(0, MAX_ENQUEUE_HISTORY_RECORDS)
+      );
+      setSelectedQueueHistoryId(nextHistoryRecord.id);
+    }
+
+    const localizedRunModeLabel =
+      response.tasks[0]?.run_mode && copy.runModeLabels[response.tasks[0].run_mode]
+        ? copy.runModeLabels[response.tasks[0].run_mode as RunMode]
+        : (response.tasks[0]?.run_mode_label || copy.notSpecified);
+    const chargeAmount = response.tasks[0]?.cdk_charge_amount ?? 0;
+
+    if (messageKind === "retrySingle") {
+      setMessage(copy.retryQueuedSingle.replace("{amount}", String(chargeAmount)));
+      return;
+    }
+
+    if (messageKind === "retryBatch") {
+      setMessage(
+        copy.retryQueuedBatch
+          .replace("{count}", String(response.created))
+          .replace("{mode}", localizedRunModeLabel)
+          .replace("{amount}", String(chargeAmount))
+      );
+      return;
+    }
+
+    if (response.tasks.length === 1) {
+      setMessage(
+        isChinese
+          ? `${localizedRunModeLabel} 任务已加入队列。后端执行成功后会自动从 CDK 中扣除 ${chargeAmount} 额度。`
+          : `${localizedRunModeLabel} task queued. After the backend succeeds, ${chargeAmount} credits will be charged from the CDK automatically.`
+      );
+      return;
+    }
+
+    setMessage(
+      isChinese
+        ? `已批量加入队列 ${response.created} 个任务。后端每成功执行 1 个 ${localizedRunModeLabel} 任务，就会自动从 CDK 中扣除 ${chargeAmount} 额度。`
+        : `${response.created} tasks were queued in bulk. Each successful ${localizedRunModeLabel} task will automatically deduct ${chargeAmount} credits from the CDK.`
+    );
+  };
+
+  const queueRetryTasks = async (plan: RetryConfirmationState) => {
+    const normalizedCode = plan.cdkCode.trim();
+    const normalizedLines = plan.rawAccountLines.map((line) => line.trim()).filter(Boolean);
+
+    if (!normalizedLines.length) {
+      throw new Error(
+        plan.scope === "single" ? copy.retryMissingTaskSource : copy.retryMissingBatchSource
+      );
+    }
+
+    if (plan.accountMode === "single") {
+      const validation = validateBulkAccountLine(normalizedLines[0] || "", 1);
+      if (!validation.ok) {
+        throw new Error(copy.retryMissingTaskSource);
+      }
+
+      const response = await request<ExchangeResponse>("/api/exchange", {
+        method: "POST",
+        body: JSON.stringify({
+          code: normalizedCode,
+          run_mode: plan.runMode,
+          account_mode: "single",
+          email: validation.record.gmail,
+          password: validation.record.password,
+          twofa_url: validation.record.twofaSecret,
+          bulk_text: "",
+        }),
+      });
+
+      applyQueuedExchangeResult({
+        response,
+        cdkCode: normalizedCode,
+        runMode: plan.runMode,
+        accountMode: "single",
+        rawAccountLines: [validation.formatted],
+        messageKind: "retrySingle",
+      });
+      return;
+    }
+
+    const bulkValidation = validateBulkAccountText(normalizedLines.join("\n"));
+    if (!bulkValidation.validLines.length) {
+      throw new Error(copy.retryMissingBatchSource);
+    }
+    if (bulkValidation.invalidLines.length) {
+      throw new Error(
+        copy.bulkSubmitInvalid.replace(
+          "{lines}",
+          formatInvalidBulkLinesMessage(copy, bulkValidation.invalidLines)
+        )
+      );
+    }
+
+    const response = await request<ExchangeResponse>("/api/exchange", {
+      method: "POST",
+      body: JSON.stringify({
+        code: normalizedCode,
+        run_mode: plan.runMode,
+        account_mode: "bulk",
+        email: "",
+        password: "",
+        twofa_url: "",
+        bulk_text: bulkValidation.validLines.join("\n"),
+      }),
+    });
+
+    applyQueuedExchangeResult({
+      response,
+      cdkCode: normalizedCode,
+      runMode: plan.runMode,
+      accountMode: "bulk",
+      rawAccountLines: bulkValidation.validLines,
+      messageKind: "retryBatch",
+    });
+  };
+
+  const buildSingleRetryConfirmation = (targetTask: QueueTask) => {
+    if (!isFailedTaskStatus(targetTask.status)) {
+      setError(copy.retryNoFailedTasks);
+      return;
+    }
+
+    const source = retrySourceByTaskId.get(targetTask.id);
+    if (!source) {
+      setError(copy.retryMissingTaskSource);
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+    setRetryConfirmation({
+      scope: "single",
+      cdkCode: source.cdkCode,
+      runMode: source.runMode,
+      accountMode: "single",
+      rawAccountLines: [source.formattedAccountLine],
+      failedCount: 1,
+      taskLabel: `#${targetTask.id} ${targetTask.email}`,
+    });
+  };
+
+  const buildBatchRetryConfirmation = () => {
+    const failedTasks = taskList.filter((item) => isFailedTaskStatus(item.status));
+    if (!failedTasks.length) {
+      setError(copy.retryNoFailedTasks);
+      return;
+    }
+
+    const sources = failedTasks.map((item) => ({
+      task: item,
+      source: retrySourceByTaskId.get(item.id) || null,
+    }));
+
+    if (sources.some((item) => !item.source)) {
+      setError(copy.retryMissingBatchSource);
+      return;
+    }
+
+    const resolvedSources = sources
+      .map((item) => item.source)
+      .filter((item): item is RetrySource => Boolean(item));
+    const firstSource = resolvedSources[0];
+
+    if (
+      !firstSource ||
+      resolvedSources.some(
+        (item) => item.cdkCode !== firstSource.cdkCode || item.runMode !== firstSource.runMode
+      )
+    ) {
+      setError(copy.retrySourceMismatch);
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+    setRetryConfirmation({
+      scope: "batch",
+      cdkCode: firstSource.cdkCode,
+      runMode: firstSource.runMode,
+      accountMode: "bulk",
+      rawAccountLines: resolvedSources.map((item) => item.formattedAccountLine),
+      failedCount: resolvedSources.length,
+    });
+  };
+
+  const handleConfirmRetry = () => {
+    if (!retryConfirmation) {
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        setError(null);
+        setMessage(null);
+        await queueRetryTasks(retryConfirmation);
+        setRetryConfirmation(null);
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError.message : copy.submitFailed);
+      }
+    });
   };
 
   const handleQueueSubmit = (runMode: RunMode) => {
@@ -1488,47 +1811,14 @@ export function ExchangeStudio() {
           method: "POST",
           body: JSON.stringify(requestBody),
         });
-        setTaskList(response.tasks);
-        setSelectedTaskId(response.tasks[0]?.id ?? null);
-        setDetail(response.detail);
-        const nextHistoryRecord = buildEnqueueHistoryRecord({
-          createdAt: response.generated_at,
+        applyQueuedExchangeResult({
+          response,
           cdkCode: normalizedCode,
           runMode,
           accountMode,
-          tasks: response.tasks,
-          rawAccounts: rawAccountLines,
-          normalizedLines: response.normalized_lines,
+          rawAccountLines,
+          messageKind: "initial",
         });
-        if (nextHistoryRecord) {
-          setEnqueueHistory((currentRecords) =>
-            [nextHistoryRecord, ...currentRecords].slice(0, MAX_ENQUEUE_HISTORY_RECORDS)
-          );
-          setSelectedQueueHistoryId(nextHistoryRecord.id);
-        }
-        if (response.tasks.length === 1) {
-          const task = response.tasks[0];
-          const localizedRunModeLabel =
-            task.run_mode && copy.runModeLabels[task.run_mode]
-              ? copy.runModeLabels[task.run_mode]
-              : task.run_mode_label;
-          setMessage(
-            isChinese
-              ? `${localizedRunModeLabel} 任务已加入队列。后端执行成功后会自动从 CDK 中扣除 ${task.cdk_charge_amount} 额度。`
-              : `${localizedRunModeLabel} task queued. After the backend succeeds, ${task.cdk_charge_amount} credits will be charged from the CDK automatically.`
-          );
-        } else {
-          const chargeAmount = response.tasks[0]?.cdk_charge_amount ?? 0;
-          const localizedRunModeLabel =
-            response.tasks[0]?.run_mode && copy.runModeLabels[response.tasks[0].run_mode]
-              ? copy.runModeLabels[response.tasks[0].run_mode as RunMode]
-              : (response.tasks[0]?.run_mode_label || "");
-          setMessage(
-            isChinese
-              ? `已批量加入队列 ${response.created} 个任务。后端每成功执行 1 个 ${localizedRunModeLabel} 任务，就会自动从 CDK 中扣除 ${chargeAmount} 额度。`
-              : `${response.created} tasks were queued in bulk. Each successful ${localizedRunModeLabel} task will automatically deduct ${chargeAmount} credits from the CDK.`
-          );
-        }
       } catch (nextError) {
         setError(nextError instanceof Error ? nextError.message : copy.submitFailed);
       }
@@ -1540,6 +1830,25 @@ export function ExchangeStudio() {
       ? task.success_message
       : null;
   const showBusinessResultPanel = task?.run_mode === "extract_link" && task.status === "success";
+  const canRetryAllFailedTasks = useMemo(() => {
+    const failedTasks = taskList.filter((item) => isFailedTaskStatus(item.status));
+    if (!failedTasks.length) {
+      return false;
+    }
+
+    const resolvedSources = failedTasks
+      .map((item) => retrySourceByTaskId.get(item.id) || null)
+      .filter((item): item is RetrySource => Boolean(item));
+
+    if (resolvedSources.length !== failedTasks.length) {
+      return false;
+    }
+
+    const firstSource = resolvedSources[0];
+    return resolvedSources.every(
+      (item) => item.cdkCode === firstSource.cdkCode && item.runMode === firstSource.runMode
+    );
+  }, [retrySourceByTaskId, taskList]);
   const cdkSummaryText = detail
     ? isChinese
       ? `${copy.cdkStatuses[detail.cdk.status as keyof typeof copy.cdkStatuses] || detail.status_label} · 可用 ${detail.cdk.available_amount} · 预留 ${detail.cdk.reserved_amount} · 总余额 ${detail.cdk.remaining_amount}`
@@ -1858,13 +2167,27 @@ export function ExchangeStudio() {
               <p className="section-kicker">{copy.taskKicker}</p>
               <h2 className="section-title">{copy.taskStatusTitle}</h2>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsQueueHistoryOpen(true)}
-              className="theme-button-surface"
-            >
-              {copy.queueHistory}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={buildBatchRetryConfirmation}
+                disabled={!canRetryAllFailedTasks || isPending}
+                className={classNames(
+                  !canRetryAllFailedTasks || isPending
+                    ? "theme-button-disabled"
+                    : "theme-button-secondary"
+                )}
+              >
+                {copy.retryAllFailed}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsQueueHistoryOpen(true)}
+                className="theme-button-surface"
+              >
+                {copy.queueHistory}
+              </button>
+            </div>
           </div>
 
           {task ? (
@@ -1875,6 +2198,8 @@ export function ExchangeStudio() {
                 </div>
                 {paginatedTaskList.map((item) => {
                   const isSelected = item.id === task.id;
+                  const isFailedItem = isFailedTaskStatus(item.status);
+                  const canRetryItem = isFailedItem && retrySourceByTaskId.has(item.id);
                   const itemTaskStatusLabel =
                     copy.taskStatuses[item.status as keyof typeof copy.taskStatuses] || item.status;
                   const itemChargeStatusLabel =
@@ -1886,42 +2211,62 @@ export function ExchangeStudio() {
                   const itemChargeError = item.cdk_charge_error?.trim() || null;
 
                   return (
-                    <button
+                    <div
                       key={item.id}
-                      type="button"
-                      onClick={() => setSelectedTaskId(item.id)}
-                      className={classNames(
-                        "surface-card grid gap-1 rounded-[1rem] border px-3 py-3 text-left transition",
-                        isSelected
-                          ? "border-[rgba(18,92,95,0.24)] bg-[rgba(18,92,95,0.08)]"
-                          : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] hover:border-[rgba(18,92,95,0.16)]"
-                      )}
+                      className="flex items-stretch gap-2"
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-semibold text-[var(--ink)]">
-                          #{item.id} {item.email}
-                        </span>
-                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
-                          {itemTaskStatusLabel}
-                        </span>
-                      </div>
-                      <div className="text-xs text-[var(--muted)]">
-                        {copy.chargeStatusPrefix}
-                        {itemChargeStatusLabel}
-                      </div>
-                      {itemTaskError ? (
-                        <div className="text-xs leading-6 text-[#973d2c]">
-                          {copy.taskError}
-                          {itemTaskError}
-                        </div>
+                      {isFailedItem ? (
+                        <button
+                          type="button"
+                          onClick={() => buildSingleRetryConfirmation(item)}
+                          disabled={!canRetryItem || isPending}
+                          className={classNames(
+                            "min-w-[4.8rem] rounded-[1rem] px-3 text-sm font-semibold",
+                            !canRetryItem || isPending
+                              ? "theme-button-disabled"
+                              : "theme-button-secondary"
+                          )}
+                        >
+                          {copy.retryTask}
+                        </button>
                       ) : null}
-                      {itemChargeError ? (
-                        <div className="text-xs leading-6 text-[#973d2c]">
-                          {copy.chargeError}
-                          {itemChargeError}
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTaskId(item.id)}
+                        className={classNames(
+                          "surface-card min-w-0 flex-1 grid gap-1 rounded-[1rem] border px-3 py-3 text-left transition",
+                          isSelected
+                            ? "border-[rgba(18,92,95,0.24)] bg-[rgba(18,92,95,0.08)]"
+                            : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] hover:border-[rgba(18,92,95,0.16)]"
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-semibold text-[var(--ink)]">
+                            #{item.id} {item.email}
+                          </span>
+                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
+                            {itemTaskStatusLabel}
+                          </span>
                         </div>
-                      ) : null}
-                    </button>
+                        <div className="text-xs text-[var(--muted)]">
+                          {copy.chargeStatusPrefix}
+                          {itemChargeStatusLabel}
+                        </div>
+                        {itemTaskError ? (
+                          <div className="text-xs leading-6 text-[#973d2c]">
+                            {copy.taskError}
+                            {itemTaskError}
+                          </div>
+                        ) : null}
+                        {itemChargeError ? (
+                          <div className="text-xs leading-6 text-[#973d2c]">
+                            {copy.chargeError}
+                            {itemChargeError}
+                          </div>
+                        ) : null}
+                      </button>
+                    </div>
                   );
                 })}
                 {totalTaskPages > 1 ? (
@@ -2065,6 +2410,14 @@ export function ExchangeStudio() {
         onSelectRecord={setSelectedQueueHistoryId}
         onCopyColumn={handleCopyQueueHistoryColumn}
         copyFeedback={queueHistoryCopyFeedback}
+      />
+      <RetryConfirmDialog
+        open={retryConfirmation !== null}
+        confirmation={retryConfirmation}
+        copy={copy}
+        isPending={isPending}
+        onClose={() => setRetryConfirmation(null)}
+        onConfirm={handleConfirmRetry}
       />
     </>
   );
@@ -2365,6 +2718,125 @@ function EnqueueHistoryPanel({
               );
             })}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RetryConfirmDialog({
+  open,
+  confirmation,
+  copy,
+  isPending,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  confirmation: RetryConfirmationState | null;
+  copy: ExchangeStudioCopy;
+  isPending: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open || !confirmation) {
+    return null;
+  }
+
+  const title =
+    confirmation.scope === "single" ? copy.retryConfirmTitleSingle : copy.retryConfirmTitleBatch;
+  const description =
+    confirmation.scope === "single"
+      ? copy.retryConfirmDescriptionSingle
+      : copy.retryConfirmDescriptionBatch;
+  const runModeLabel =
+    copy.runModeLabels[confirmation.runMode] || confirmation.runMode;
+
+  return (
+    <div
+      className="modal-overlay-enter fixed inset-0 z-[60] overflow-hidden overscroll-none bg-[rgba(29,34,29,0.48)] p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="panel modal-panel-enter mx-auto flex w-full max-w-2xl flex-col gap-4 overflow-hidden p-5 md:p-6"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="section-kicker">{copy.detailKicker}</p>
+            <h2 className="section-title">{title}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="theme-button-surface"
+          >
+            {copy.close}
+          </button>
+        </div>
+
+        <div className="text-sm leading-7 text-[var(--muted)]">
+          {description}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {confirmation.taskLabel ? (
+            <div className="surface-card rounded-[1.2rem] border p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                {copy.retryConfirmTaskLabel}
+              </div>
+              <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
+                {confirmation.taskLabel}
+              </div>
+            </div>
+          ) : null}
+          <div className="surface-card rounded-[1.2rem] border p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+              {copy.retryConfirmFailedCountLabel}
+            </div>
+            <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
+              {confirmation.failedCount}
+            </div>
+          </div>
+          <div className="surface-card rounded-[1.2rem] border p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+              {copy.retryConfirmModeLabel}
+            </div>
+            <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
+              {runModeLabel}
+            </div>
+          </div>
+          <div className="surface-card rounded-[1.2rem] border p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+              {copy.retryConfirmCdkLabel}
+            </div>
+            <div className="mt-2 break-all font-mono text-sm font-semibold text-[var(--ink)]">
+              {confirmation.cdkCode}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isPending}
+            className={classNames(
+              isPending ? "theme-button-disabled" : "theme-button-surface"
+            )}
+          >
+            {copy.cancel}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPending}
+            className={classNames(
+              isPending ? "theme-button-disabled" : "theme-button-primary"
+            )}
+          >
+            {isPending ? copy.working : copy.retryConfirmAction}
+          </button>
         </div>
       </div>
     </div>
