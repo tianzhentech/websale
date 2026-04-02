@@ -218,6 +218,7 @@ const LANGUAGE_COPY = {
     queueHistorySummary: "{mode} · {count} 条",
     queueHistoryDetailTitle: "原始账号记录",
     queueHistoryTaskCount: "共 {count} 条账号",
+    queueHistoryCodeInfo: "卡密信息",
     queueHistoryPendingHint: "还有 {count} 条任务仍在排队或处理中。",
     queueHistorySuccess: "成功记录",
     queueHistoryFailed: "失败记录",
@@ -315,7 +316,7 @@ const LANGUAGE_COPY = {
     bulkIssueLine: "第 {line} 行：{reason}",
     bulkIssueMore: "以及另外 {count} 行",
     bulkIssueLabels: {
-      missing_separator: "未使用 Gmail---Password---2fa密钥 格式",
+      missing_separator: "未使用 Gmail---Password---2FA密钥 格式",
       missing_gmail: "缺少 Gmail 邮箱",
       invalid_gmail: "Gmail 邮箱不合法",
       missing_password: "缺少密码",
@@ -387,6 +388,7 @@ const LANGUAGE_COPY = {
     queueHistorySummary: "{mode} · {count} accounts",
     queueHistoryDetailTitle: "Original Accounts",
     queueHistoryTaskCount: "{count} account(s)",
+    queueHistoryCodeInfo: "CDK Info",
     queueHistoryPendingHint: "{count} task(s) are still queued or running.",
     queueHistorySuccess: "Successful",
     queueHistoryFailed: "Failed",
@@ -484,7 +486,7 @@ const LANGUAGE_COPY = {
     bulkIssueLine: "Line {line}: {reason}",
     bulkIssueMore: "and {count} more line(s)",
     bulkIssueLabels: {
-      missing_separator: "must use the Gmail---Password---2fa key format",
+      missing_separator: "must use the Gmail---Password---2FA key format",
       missing_gmail: "missing Gmail address",
       invalid_gmail: "invalid Gmail address",
       missing_password: "missing password",
@@ -1727,7 +1729,9 @@ export function ExchangeStudio() {
               <div className="grid gap-3">
                 <div className="rounded-[1.2rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] px-4 py-3 text-sm leading-7 text-[var(--teal)]">
                   {copy.bulkHelp}
-                  <span className="font-mono">Gmail---Password---2FA</span>
+                  <span className="font-mono">
+                    {isChinese ? "Gmail---Password---2FA密钥" : "Gmail---Password---2FA key"}
+                  </span>
                   {isChinese ? " 格式。" : " format."}
                 </div>
                 <label className="grid gap-2">
@@ -2166,12 +2170,28 @@ function EnqueueHistoryPanel({
   onCopyColumn: (record: EnqueueHistoryRecord, column: "success" | "failed") => void;
   copyFeedback: EnqueueHistoryCopyFeedback | null;
 }) {
+  const orderedRecords = [...records].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at);
+    const rightTime = Date.parse(right.created_at);
+
+    if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+      return right.id.localeCompare(left.id);
+    }
+    if (Number.isNaN(leftTime)) {
+      return 1;
+    }
+    if (Number.isNaN(rightTime)) {
+      return -1;
+    }
+    return rightTime - leftTime;
+  });
+
   const selectedRecord =
-    records.find((record) => record.id === selectedRecordId) || records[0] || null;
+    orderedRecords.find((record) => record.id === selectedRecordId) || orderedRecords[0] || null;
 
   if (!records.length) {
     return (
-      <div className="surface-card rounded-[1.35rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.78)] p-4">
+      <div className="grid gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
             {copy.queueHistory}
@@ -2180,7 +2200,7 @@ function EnqueueHistoryPanel({
             {copy.queueHistoryLocalHint}
           </div>
         </div>
-        <div className="empty-panel mt-4 min-h-[10rem]">{copy.queueHistoryEmpty}</div>
+        <div className="empty-panel min-h-[10rem]">{copy.queueHistoryEmpty}</div>
       </div>
     );
   }
@@ -2191,18 +2211,9 @@ function EnqueueHistoryPanel({
   const failedItems = selectedRecord
     ? selectedRecord.items.filter((item) => isFailedTaskStatus(item.task.status))
     : [];
-  const pendingItems = selectedRecord
-    ? selectedRecord.items.filter(
-        (item) => item.task.status !== "success" && !isFailedTaskStatus(item.task.status)
-      )
-    : [];
-  const runModeLabel =
-    selectedRecord && copy.runModeLabels[selectedRecord.run_mode]
-      ? copy.runModeLabels[selectedRecord.run_mode]
-      : selectedRecord?.run_mode || copy.notSpecified;
 
   return (
-    <div className="surface-card grid gap-4 rounded-[1.35rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.78)] p-4">
+    <div className="grid gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
           {copy.queueHistory}
@@ -2212,37 +2223,51 @@ function EnqueueHistoryPanel({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)]">
-        <div className="grid gap-2">
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-            {copy.queueHistoryTime}
-          </div>
+      <div className="grid gap-5 xl:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)]">
+        <div
+          className="grid gap-3 xl:border-r xl:pr-5"
+          style={{ borderColor: "var(--surface-border)" }}
+        >
           <div className="max-h-[24rem] overflow-y-auto pr-1">
             <div className="grid gap-2">
-              {records.map((record) => {
+              {orderedRecords.map((record) => {
                 const isSelected = selectedRecord?.id === record.id;
                 const recordRunModeLabel =
                   copy.runModeLabels[record.run_mode] || record.run_mode;
+                const recordPendingCount = record.items.filter(
+                  (item) => item.task.status !== "success" && !isFailedTaskStatus(item.task.status)
+                ).length;
                 return (
                   <button
                     key={record.id}
                     type="button"
                     onClick={() => onSelectRecord(record.id)}
+                    style={{
+                      borderColor: isSelected ? "rgba(18,92,95,0.24)" : "var(--surface-border)",
+                    }}
                     className={classNames(
-                      "surface-card grid gap-1 rounded-[1rem] border px-3 py-3 text-left transition",
+                      "grid gap-1 rounded-[1rem] border px-3 py-3 text-left transition",
                       isSelected
-                        ? "border-[rgba(18,92,95,0.24)] bg-[rgba(18,92,95,0.08)]"
-                        : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] hover:border-[rgba(18,92,95,0.16)]"
+                        ? "bg-[rgba(18,92,95,0.08)]"
+                        : "bg-transparent hover:bg-[rgba(18,92,95,0.04)]"
                     )}
                   >
                     <div className="text-sm font-semibold text-[var(--ink)]">
                       {formatDate(record.created_at, locale, copy.emDash)}
                     </div>
-                    <div className="text-xs text-[var(--muted)]">
+                    <div className="text-xs leading-6 text-[var(--muted)]">
                       {copy.queueHistorySummary
                         .replace("{mode}", recordRunModeLabel)
                         .replace("{count}", String(record.items.length))}
                     </div>
+                    {recordPendingCount ? (
+                      <div className="text-xs leading-6 text-[var(--teal)]">
+                        {copy.queueHistoryPendingHint.replace(
+                          "{count}",
+                          String(recordPendingCount)
+                        )}
+                      </div>
+                    ) : null}
                   </button>
                 );
               })}
@@ -2252,33 +2277,12 @@ function EnqueueHistoryPanel({
 
         <div className="grid gap-4">
           <div className="surface-soft rounded-[1.2rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
-                  {copy.queueHistoryDetailTitle}
-                </div>
-                <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[var(--ink)]">
-                  {formatDate(selectedRecord?.created_at, locale, copy.emDash)}
-                </div>
-              </div>
-              <div className="text-right text-sm leading-6 text-[var(--muted)]">
-                <div>{runModeLabel}</div>
-                <div>
-                  {copy.queueHistoryTaskCount.replace(
-                    "{count}",
-                    String(selectedRecord?.items.length || 0)
-                  )}
-                </div>
-                {selectedRecord?.cdk_code ? (
-                  <div className="font-mono text-xs">{selectedRecord.cdk_code}</div>
-                ) : null}
-              </div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
+              {copy.queueHistoryCodeInfo}
             </div>
-            {pendingItems.length ? (
-              <div className="mt-3 text-sm leading-7 text-[var(--teal)]">
-                {copy.queueHistoryPendingHint.replace("{count}", String(pendingItems.length))}
-              </div>
-            ) : null}
+            <div className="mt-3 break-all font-mono text-sm leading-7 text-[var(--ink)]">
+              {selectedRecord?.cdk_code || copy.unbound}
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -2298,7 +2302,8 @@ function EnqueueHistoryPanel({
               return (
                 <div
                   key={column}
-                  className="surface-card grid gap-3 rounded-[1.2rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-4"
+                  className="grid gap-3 rounded-[1.2rem] border p-4"
+                  style={{ borderColor: "var(--surface-border)" }}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -2328,12 +2333,16 @@ function EnqueueHistoryPanel({
                   ) : null}
 
                   {items.length ? (
-                    <div className="surface-subtle max-h-[18rem] overflow-y-auto rounded-[1rem] border p-3">
-                      <div className="grid gap-2">
-                        {items.map((item) => (
+                    <div className="max-h-[18rem] overflow-y-auto pr-1">
+                      <div className="grid gap-0">
+                        {items.map((item, index) => (
                           <div
                             key={`${column}-${item.task_id}`}
-                            className="surface-card rounded-[0.9rem] border px-3 py-3"
+                            className={classNames(
+                              "px-1 py-3",
+                              index > 0 && "border-t"
+                            )}
+                            style={index > 0 ? { borderColor: "var(--surface-border)" } : undefined}
                           >
                             <div className="break-all font-mono text-xs leading-6 text-[var(--ink)] whitespace-pre-wrap">
                               {item.raw_account}
