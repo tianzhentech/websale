@@ -2633,7 +2633,7 @@ function EnqueueHistoryPanel({
           </div>
         </div>
 
-        <div className="grid min-h-0 gap-3 [grid-template-rows:auto_minmax(0,0.8fr)_minmax(0,1fr)]">
+        <div className="grid min-h-0 gap-3 [grid-template-rows:auto_minmax(0,1fr)_minmax(0,1fr)]">
           <div className="surface-soft rounded-[1rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] px-3.5 py-2.5">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
               {copy.queueHistoryCodeInfo}
@@ -2690,18 +2690,18 @@ function EnqueueHistoryPanel({
                   ) : null}
 
                   <div
-                    className="surface-ghost min-h-0 flex-1 overflow-hidden rounded-[1rem] border px-3.5 py-2.5"
+                    className="surface-ghost min-h-0 flex-1 overflow-hidden rounded-[1rem] border px-3.5 pt-1 pb-2"
                     style={{ borderColor: "var(--surface-border-strong)" }}
                   >
                     {items.length ? (
-                      <div className="h-full overflow-hidden">
+                      <div className="h-full overflow-y-auto">
                         <div className="grid content-start gap-0">
                           {items.map((item, index) => (
                             <div
                               key={`${column}-${item.task_id}`}
                               className={classNames(
-                                "py-3 text-left",
-                                index > 0 && "border-t"
+                                "text-left",
+                                index === 0 ? "pt-1 pb-2" : "py-2 border-t"
                               )}
                               style={index > 0 ? { borderColor: "var(--surface-border)" } : undefined}
                             >
