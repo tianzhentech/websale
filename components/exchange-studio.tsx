@@ -2941,11 +2941,11 @@ function RetryConfirmDialog({
 
   return (
     <div
-      className="modal-overlay-enter fixed inset-0 z-[60] overflow-hidden overscroll-none bg-[rgba(29,34,29,0.48)] p-4 backdrop-blur-sm"
+      className="modal-overlay-enter fixed inset-0 z-[60] overflow-y-auto overscroll-none bg-[rgba(29,34,29,0.48)] p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="panel modal-panel-enter mx-auto flex w-full max-w-2xl flex-col gap-4 overflow-hidden p-5 md:p-6"
+        className="panel modal-panel-enter mx-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden p-5 md:p-6"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2962,198 +2962,202 @@ function RetryConfirmDialog({
           </button>
         </div>
 
-        <div className="text-sm leading-7 text-[var(--muted)]">
-          {description}
-        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="grid gap-4">
+            <div className="text-sm leading-7 text-[var(--muted)]">
+              {description}
+            </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          {taskLabel ? (
-            <div className="surface-card rounded-[1.2rem] border p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                {copy.retryConfirmTaskLabel}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {taskLabel ? (
+                <div className="surface-card rounded-[1.2rem] border p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    {copy.retryConfirmTaskLabel}
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
+                    {taskLabel}
+                  </div>
+                </div>
+              ) : null}
+              <div className="surface-card rounded-[1.2rem] border p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  {copy.retryConfirmFailedCountLabel}
+                </div>
+                <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
+                  {confirmation.failedCount}
+                </div>
               </div>
-              <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
-                {taskLabel}
+              {confirmation.scope === "batch" ? (
+                <div className="surface-card rounded-[1.2rem] border p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    {copy.retryConfirmSelectedCountLabel}
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
+                    {selection.selectedCount}
+                  </div>
+                </div>
+              ) : null}
+              <div className="surface-card rounded-[1.2rem] border p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  {copy.retryConfirmModeLabel}
+                </div>
+                <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
+                  {runModeLabel}
+                </div>
               </div>
-            </div>
-          ) : null}
-          <div className="surface-card rounded-[1.2rem] border p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-              {copy.retryConfirmFailedCountLabel}
-            </div>
-            <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
-              {confirmation.failedCount}
-            </div>
-          </div>
-          {confirmation.scope === "batch" ? (
-            <div className="surface-card rounded-[1.2rem] border p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                {copy.retryConfirmSelectedCountLabel}
-              </div>
-              <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
-                {selection.selectedCount}
-              </div>
-            </div>
-          ) : null}
-          <div className="surface-card rounded-[1.2rem] border p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-              {copy.retryConfirmModeLabel}
-            </div>
-            <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
-              {runModeLabel}
-            </div>
-          </div>
-          <div className="surface-card rounded-[1.2rem] border p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-              {copy.retryConfirmCdkLabel}
-            </div>
-            <div className="mt-2 break-all font-mono text-sm font-semibold text-[var(--ink)]">
-              {selection.plan?.cdkCode || copy.emDash}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-3 rounded-[1.2rem] border p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                {copy.retryConfirmSelectionLabel}
-              </div>
-              <div className="mt-1 text-sm text-[var(--muted)]">
-                {confirmation.scope === "batch"
-                  ? `${selection.selectedCount} / ${selection.selectableCount}`
-                  : confirmation.items[0]?.email || copy.emDash}
+              <div className="surface-card rounded-[1.2rem] border p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  {copy.retryConfirmCdkLabel}
+                </div>
+                <div className="mt-2 break-all font-mono text-sm font-semibold text-[var(--ink)]">
+                  {selection.plan?.cdkCode || copy.emDash}
+                </div>
               </div>
             </div>
 
-            {confirmation.scope === "batch" ? (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={onSelectAll}
-                  disabled={isPending || selection.selectableCount === 0}
-                  className={classNames(
-                    isPending || selection.selectableCount === 0
-                      ? "theme-button-disabled"
-                      : "theme-button-surface"
-                  )}
-                >
-                  {copy.retryConfirmSelectAll}
-                </button>
-                <button
-                  type="button"
-                  onClick={onClearAll}
-                  disabled={isPending || selection.selectableCount === 0}
-                  className={classNames(
-                    isPending || selection.selectableCount === 0
-                      ? "theme-button-disabled"
-                      : "theme-button-surface"
-                  )}
-                >
-                  {copy.retryConfirmClearAll}
-                </button>
+            <div className="grid gap-3 rounded-[1.2rem] border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    {copy.retryConfirmSelectionLabel}
+                  </div>
+                  <div className="mt-1 text-sm text-[var(--muted)]">
+                    {confirmation.scope === "batch"
+                      ? `${selection.selectedCount} / ${selection.selectableCount}`
+                      : confirmation.items[0]?.email || copy.emDash}
+                  </div>
+                </div>
+
+                {confirmation.scope === "batch" ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={onSelectAll}
+                      disabled={isPending || selection.selectableCount === 0}
+                      className={classNames(
+                        isPending || selection.selectableCount === 0
+                          ? "theme-button-disabled"
+                          : "theme-button-surface"
+                      )}
+                    >
+                      {copy.retryConfirmSelectAll}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClearAll}
+                      disabled={isPending || selection.selectableCount === 0}
+                      className={classNames(
+                        isPending || selection.selectableCount === 0
+                          ? "theme-button-disabled"
+                          : "theme-button-surface"
+                      )}
+                    >
+                      {copy.retryConfirmClearAll}
+                    </button>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
 
-          {selection.error ? (
-            <div className="notice notice-error">{selection.error}</div>
-          ) : null}
+              {selection.error ? (
+                <div className="notice notice-error">{selection.error}</div>
+              ) : null}
 
-          <div
-            className="surface-ghost max-h-[24rem] overflow-y-auto rounded-[1rem] border p-2.5"
-            style={{ borderColor: "var(--surface-border-strong)" }}
-          >
-            <div className="grid gap-2">
-              {confirmation.items.map((item) => {
-                const itemHasFailureDetail = Boolean(item.taskError || item.chargeError);
-                return (
-                  <label
-                    key={item.taskId}
-                    className={classNames(
-                      "surface-card grid gap-3 rounded-[1rem] border p-3 transition",
-                      item.selected && item.selectable
-                        ? "border-[rgba(18,92,95,0.28)] bg-[rgba(18,92,95,0.08)]"
-                        : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)]",
-                      item.selectable && !isPending ? "cursor-pointer" : "cursor-default"
-                    )}
-                  >
-                    <div className="flex items-start gap-3">
-                      {confirmation.scope === "batch" ? (
-                        <input
-                          type="checkbox"
-                          checked={item.selected}
-                          disabled={!item.selectable || isPending}
-                          onChange={(event) =>
-                            onToggleItem(item.taskId, event.target.checked)
-                          }
-                          className="mt-1 h-4 w-4 accent-[var(--teal)]"
-                        />
-                      ) : null}
+              <div
+                className="surface-ghost rounded-[1rem] border p-2.5"
+                style={{ borderColor: "var(--surface-border-strong)" }}
+              >
+                <div className="grid gap-2">
+                  {confirmation.items.map((item) => {
+                    const itemHasFailureDetail = Boolean(item.taskError || item.chargeError);
+                    return (
+                      <label
+                        key={item.taskId}
+                        className={classNames(
+                          "surface-card grid gap-3 rounded-[1rem] border p-3 transition",
+                          item.selected && item.selectable
+                            ? "border-[rgba(18,92,95,0.28)] bg-[rgba(18,92,95,0.08)]"
+                            : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)]",
+                          item.selectable && !isPending ? "cursor-pointer" : "cursor-default"
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          {confirmation.scope === "batch" ? (
+                            <input
+                              type="checkbox"
+                              checked={item.selected}
+                              disabled={!item.selectable || isPending}
+                              onChange={(event) =>
+                                onToggleItem(item.taskId, event.target.checked)
+                              }
+                              className="mt-1 h-4 w-4 accent-[var(--teal)]"
+                            />
+                          ) : null}
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="text-sm font-semibold text-[var(--ink)]">
-                            {item.taskLabel}
-                          </div>
-                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
-                            {item.taskStatusLabel}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-sm font-semibold text-[var(--ink)]">
+                                {item.taskLabel}
+                              </div>
+                              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
+                                {item.taskStatusLabel}
+                              </div>
+                            </div>
+
+                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              <div className="rounded-[0.9rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-3">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                                  {copy.retryConfirmAccountLabel}
+                                </div>
+                                <div className="mt-2 break-all font-mono text-xs leading-6 text-[var(--ink)] whitespace-pre-wrap">
+                                  {item.rawAccountLine}
+                                </div>
+                              </div>
+
+                              <div className="rounded-[0.9rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-3">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                                  {copy.retryConfirmFailureLabel}
+                                </div>
+                                <div className="mt-2 grid gap-1.5 text-xs leading-6 text-[#973d2c]">
+                                  {item.taskError ? (
+                                    <div>
+                                      {copy.taskError}
+                                      {item.taskError}
+                                    </div>
+                                  ) : null}
+                                  {item.chargeError ? (
+                                    <div>
+                                      {copy.chargeError}
+                                      {item.chargeError}
+                                    </div>
+                                  ) : null}
+                                  {!itemHasFailureDetail ? (
+                                    <div className="text-[var(--muted)]">
+                                      {item.taskStatusLabel}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+
+                            {!item.selectable && item.unavailableReason ? (
+                              <div className="mt-3 notice notice-error">
+                                {copy.retryConfirmUnavailable}
+                                {" · "}
+                                {item.unavailableReason}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
-
-                        <div className="mt-3 grid gap-3 md:grid-cols-2">
-                          <div className="rounded-[0.9rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                              {copy.retryConfirmAccountLabel}
-                            </div>
-                            <div className="mt-2 break-all font-mono text-xs leading-6 text-[var(--ink)] whitespace-pre-wrap">
-                              {item.rawAccountLine}
-                            </div>
-                          </div>
-
-                          <div className="rounded-[0.9rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                              {copy.retryConfirmFailureLabel}
-                            </div>
-                            <div className="mt-2 grid gap-1.5 text-xs leading-6 text-[#973d2c]">
-                              {item.taskError ? (
-                                <div>
-                                  {copy.taskError}
-                                  {item.taskError}
-                                </div>
-                              ) : null}
-                              {item.chargeError ? (
-                                <div>
-                                  {copy.chargeError}
-                                  {item.chargeError}
-                                </div>
-                              ) : null}
-                              {!itemHasFailureDetail ? (
-                                <div className="text-[var(--muted)]">
-                                  {item.taskStatusLabel}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-
-                        {!item.selectable && item.unavailableReason ? (
-                          <div className="mt-3 notice notice-error">
-                            {copy.retryConfirmUnavailable}
-                            {" · "}
-                            {item.unavailableReason}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </label>
-                );
-              })}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-[rgba(31,35,28,0.08)] pt-4">
           <button
             type="button"
             onClick={onClose}
