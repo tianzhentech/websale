@@ -2495,7 +2495,7 @@ function QueueHistoryDialog({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <EnqueueHistoryPanel
             copy={copy}
             locale={locale}
@@ -2571,7 +2571,7 @@ function EnqueueHistoryPanel({
     : [];
 
   return (
-    <div className="grid min-h-full gap-5">
+    <div className="grid h-full min-h-0 gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
           {copy.queueHistory}
@@ -2581,9 +2581,9 @@ function EnqueueHistoryPanel({
         </div>
       </div>
 
-      <div className="grid min-h-0 items-stretch gap-5 xl:grid-cols-[minmax(16rem,0.72fr)_minmax(0,1.28fr)]">
+      <div className="grid min-h-0 flex-1 items-stretch gap-5 xl:grid-cols-[minmax(16rem,0.72fr)_minmax(0,1.28fr)]">
         <div
-          className="grid min-h-0 xl:border-r xl:pr-5"
+          className="grid min-h-0 h-full xl:border-r xl:pr-5"
           style={{ borderColor: "var(--surface-border)" }}
         >
           <div className="min-h-0 h-full overflow-y-auto pr-1">
@@ -2633,8 +2633,8 @@ function EnqueueHistoryPanel({
           </div>
         </div>
 
-        <div className="grid gap-4">
-          <div className="surface-soft rounded-[1.2rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] p-4">
+        <div className="grid min-h-0 gap-4 [grid-template-rows:auto_minmax(0,0.8fr)_minmax(0,1fr)]">
+          <div className="surface-soft rounded-[1.2rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] px-4 py-3">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
               {copy.queueHistoryCodeInfo}
             </div>
@@ -2643,11 +2643,10 @@ function EnqueueHistoryPanel({
             </div>
           </div>
 
-          <div className="grid gap-4">
-            {([
-              ["success", copy.queueHistorySuccess, successItems, copy.queueHistoryNoSuccess],
-              ["failed", copy.queueHistoryFailed, failedItems, copy.queueHistoryNoFailed],
-            ] as const).map(([column, title, items, emptyLabel]) => {
+          {([
+            ["success", copy.queueHistorySuccess, successItems, copy.queueHistoryNoSuccess],
+            ["failed", copy.queueHistoryFailed, failedItems, copy.queueHistoryNoFailed],
+          ] as const).map(([column, title, items, emptyLabel]) => {
               const copied =
                 copyFeedback?.recordId === selectedRecord?.id &&
                 copyFeedback.column === column &&
@@ -2660,7 +2659,7 @@ function EnqueueHistoryPanel({
               return (
                 <div
                   key={column}
-                  className="grid gap-3 rounded-[1.2rem] border p-4"
+                  className="flex min-h-0 flex-col gap-3 rounded-[1.2rem] border p-4"
                   style={{ borderColor: "var(--surface-border)" }}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2691,11 +2690,11 @@ function EnqueueHistoryPanel({
                   ) : null}
 
                   <div
-                    className="surface-ghost min-h-[12rem] rounded-[1.5rem] border p-4"
+                    className="surface-ghost min-h-0 flex-1 overflow-hidden rounded-[1.5rem] border p-4"
                     style={{ borderColor: "var(--surface-border-strong)" }}
                   >
                     {items.length ? (
-                      <div className="max-h-[18rem] overflow-y-auto pr-1">
+                      <div className="h-full overflow-hidden">
                         <div className="grid gap-0">
                           {items.map((item, index) => (
                             <div
@@ -2714,7 +2713,7 @@ function EnqueueHistoryPanel({
                         </div>
                       </div>
                     ) : (
-                      <div className="flex min-h-[calc(12rem-2rem)] items-center justify-center text-center text-[var(--muted)] leading-8">
+                      <div className="flex h-full min-h-0 items-center justify-center text-center text-[var(--muted)] leading-8">
                         {emptyLabel}
                       </div>
                     )}
@@ -2722,7 +2721,6 @@ function EnqueueHistoryPanel({
                 </div>
               );
             })}
-          </div>
         </div>
       </div>
     </div>
