@@ -2663,26 +2663,26 @@ function EnqueueHistoryPanel({
                   style={{ borderColor: "var(--surface-border)" }}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                        {title}
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-[var(--ink)]">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                      {title}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm font-semibold text-[var(--ink)]">
                         {items.length}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => selectedRecord && onCopyColumn(selectedRecord, column)}
+                        disabled={!selectedRecord || !items.length}
+                        className={classNames(
+                          !selectedRecord || !items.length
+                            ? "theme-button-disabled"
+                            : "theme-button-secondary"
+                        )}
+                      >
+                        {copied ? copy.queueHistoryCopied : copy.queueHistoryCopy}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => selectedRecord && onCopyColumn(selectedRecord, column)}
-                      disabled={!selectedRecord || !items.length}
-                      className={classNames(
-                        !selectedRecord || !items.length
-                          ? "theme-button-disabled"
-                          : "theme-button-secondary"
-                      )}
-                    >
-                      {copied ? copy.queueHistoryCopied : copy.queueHistoryCopy}
-                    </button>
                   </div>
 
                   {copyFailed ? (
@@ -2690,12 +2690,12 @@ function EnqueueHistoryPanel({
                   ) : null}
 
                   <div
-                    className="surface-ghost min-h-0 flex-1 overflow-hidden rounded-[1.5rem] border p-4"
+                    className="surface-ghost min-h-0 flex-1 overflow-hidden rounded-[1.5rem] border px-4 py-3"
                     style={{ borderColor: "var(--surface-border-strong)" }}
                   >
                     {items.length ? (
                       <div className="h-full overflow-hidden">
-                        <div className="grid gap-0">
+                        <div className="grid content-start gap-0">
                           {items.map((item, index) => (
                             <div
                               key={`${column}-${item.task_id}`}
