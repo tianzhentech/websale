@@ -90,10 +90,10 @@ export function AdminMarkdownEditor({
     language === "zh"
       ? {
           loginFailed: "登录失败。",
-          enteredEditor: "已进入编辑区。",
+          enteredEditor: "已进入管理后台。",
           saveFailed: "保存失败。",
           saved: "内容已保存，正在后台更新多语言副本。",
-          loggedOut: "已退出编辑区。",
+          loggedOut: "已退出管理后台。",
           backendLoadFailed: "后端地址配置加载失败。",
           backendSaveFailed: "后端地址保存失败。",
           backendSaved: "后端地址已更新。",
@@ -103,26 +103,26 @@ export function AdminMarkdownEditor({
           overviewSaveFailed: "热力图时间窗口保存失败。",
           overviewSaved: "热力图时间窗口已更新。",
           admin: "Admin",
-          title: "Markdown 编辑区",
-          introPrefix: "这里编辑的内容会显示在首页最上方。默认密码是 ",
+          title: "管理后台",
+          introPrefix: "此页面仅供已授权管理员访问。",
           backHome: "返回首页",
           logout: "退出登录",
-          passwordTitle: "输入密码",
-          passwordDescription: "通过验证后才可以进入 Markdown 编辑区并保存首页说明。",
+          passwordTitle: "管理员验证",
+          passwordDescription: "通过验证后才可以进入管理后台。",
           passwordPlaceholder: "输入管理员密码",
-          enterEditor: "进入编辑区",
+          enterEditor: "进入管理后台",
           checking: "验证中...",
-          supportedMarkdown: "支持的 Markdown",
-          markdownFeatures: "标题、加粗、斜体、链接、引用块、列表、分隔线和代码块都可以直接使用。",
-          editor: "Editor",
-          editorTitle: "Markdown 源码",
-          editorHint: "这里只维护一份中文源 Markdown。每次保存后，系统会在后台更新英文和越南语副本；首页切换语言时优先读取已保存的副本。",
+          supportedMarkdown: "访问说明",
+          markdownFeatures: "后台内容仅在验证通过后显示，未授权访问不会公开任何管理细节。",
+          editor: "Notice",
+          editorTitle: "首页公告内容",
+          editorHint: "这里维护首页顶部公告的中文源 Markdown。每次保存后，系统会在后台更新英文和越南语副本；首页切换语言时优先读取已保存的副本。",
           pickEmoji: "选择 Emoji",
           saving: "保存中...",
-          save: "保存内容",
+          save: "保存公告内容",
           emoji: "Emoji",
           preview: "Preview",
-          previewTitle: "实时预览",
+          previewTitle: "首页公告预览",
           emptyNotice: "当前暂无说明内容。",
           backendKicker: "Backend",
           backendTitle: "后端地址",
@@ -160,10 +160,10 @@ export function AdminMarkdownEditor({
         }
       : {
           loginFailed: "Login failed.",
-          enteredEditor: "Editor unlocked.",
+          enteredEditor: "Admin console unlocked.",
           saveFailed: "Save failed.",
           saved: "Content saved. Background language copies are updating now.",
-          loggedOut: "Signed out.",
+          loggedOut: "Signed out of the admin console.",
           backendLoadFailed: "Failed to load backend address settings.",
           backendSaveFailed: "Failed to save the backend address.",
           backendSaved: "Backend address updated.",
@@ -173,26 +173,26 @@ export function AdminMarkdownEditor({
           overviewSaveFailed: "Failed to save the heatmap activity window.",
           overviewSaved: "Heatmap activity window updated.",
           admin: "Admin",
-          title: "Markdown Editor",
-          introPrefix: "Content edited here will appear at the top of the homepage. Default password: ",
+          title: "Admin Console",
+          introPrefix: "This page is restricted to authorized administrators only.",
           backHome: "Back Home",
           logout: "Sign Out",
-          passwordTitle: "Enter Password",
-          passwordDescription: "You need to authenticate before editing and saving the homepage notice board.",
+          passwordTitle: "Admin Access",
+          passwordDescription: "Authenticate before entering the admin console.",
           passwordPlaceholder: "Enter admin password",
-          enterEditor: "Open Editor",
+          enterEditor: "Open Console",
           checking: "Checking...",
-          supportedMarkdown: "Supported Markdown",
-          markdownFeatures: "Headings, bold, italic, links, blockquotes, lists, rules, and code blocks are supported.",
-          editor: "Editor",
-          editorTitle: "Markdown Source",
-          editorHint: "This editor maintains the Chinese source Markdown only. After each save, the app updates the English and Vietnamese copies in the background and the homepage prefers those saved copies when the language changes.",
+          supportedMarkdown: "Access Notice",
+          markdownFeatures: "Admin details stay hidden until authentication succeeds. No management scope is exposed on the public login view.",
+          editor: "Notice",
+          editorTitle: "Homepage Notice Content",
+          editorHint: "Maintain the Chinese source Markdown for the homepage notice here. After each save, the app updates the English and Vietnamese copies in the background and the homepage prefers those saved copies when the language changes.",
           pickEmoji: "Emoji",
           saving: "Saving...",
-          save: "Save Content",
+          save: "Save Notice",
           emoji: "Emoji",
           preview: "Preview",
-          previewTitle: "Live Preview",
+          previewTitle: "Homepage Notice Preview",
           emptyNotice: "No notice content yet.",
           backendKicker: "Backend",
           backendTitle: "Backend Address",
@@ -565,26 +565,38 @@ export function AdminMarkdownEditor({
 
   return (
     <section className="panel overflow-hidden p-5 md:p-6">
-      <div className="grid gap-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="section-kicker">{copy.admin}</p>
-            <h1 className="section-title">{copy.title}</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--muted)]">
-              {copy.introPrefix}
-              <span className="font-mono">123456</span>
-              {language === "zh" ? "。" : "."}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
+      <div
+        className={classNames(
+          "grid gap-5",
+          !isAuthenticated && "min-h-[calc(100vh-12rem)] content-center justify-items-center"
+        )}
+      >
+        {!isAuthenticated ? (
+          <div className="absolute right-5 top-5 md:right-6 md:top-6">
             <Link
               href="/"
               className="theme-button-secondary"
             >
               {copy.backHome}
             </Link>
-            {isAuthenticated ? (
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="section-kicker">{copy.admin}</p>
+              <h1 className="section-title">{copy.title}</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--muted)]">
+                {copy.introPrefix}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/"
+                className="theme-button-secondary"
+              >
+                {copy.backHome}
+              </Link>
               <button
                 type="button"
                 onClick={handleLogout}
@@ -598,19 +610,37 @@ export function AdminMarkdownEditor({
               >
                 {copy.logout}
               </button>
-            ) : null}
+            </div>
           </div>
-        </div>
+        )}
 
-        {status ? <div className="notice notice-success">{status}</div> : null}
-        {error ? <div className="notice notice-error">{error}</div> : null}
+        {status ? (
+          <div
+            className={classNames(
+              "notice notice-success",
+              !isAuthenticated && "w-full max-w-[48rem] text-center"
+            )}
+          >
+            {status}
+          </div>
+        ) : null}
+        {error ? (
+          <div
+            className={classNames(
+              "notice notice-error",
+              !isAuthenticated && "w-full max-w-[48rem] text-center"
+            )}
+          >
+            {error}
+          </div>
+        ) : null}
 
         {!isAuthenticated ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
-            <div className="surface-soft rounded-[1.6rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.58)] p-4">
-              <div className="space-y-3">
+          <div className="flex w-full justify-center py-2 md:py-4">
+            <div className="surface-soft w-full max-w-[42rem] rounded-[1.8rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.58)] p-8 md:p-10">
+              <div className="grid justify-items-center gap-4 text-center">
                 <h2 className="text-xl font-semibold tracking-[-0.03em]">{copy.passwordTitle}</h2>
-                <p className="text-sm leading-7 text-[var(--muted)]">
+                <p className="max-w-[24rem] text-sm leading-7 text-[var(--muted)]">
                   {copy.passwordDescription}
                 </p>
                 <input
@@ -618,7 +648,7 @@ export function AdminMarkdownEditor({
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder={copy.passwordPlaceholder}
-                  className="w-full rounded-[1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+                  className="w-full max-w-[26rem] rounded-[1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
                 />
                 <button
                   type="button"
@@ -633,15 +663,6 @@ export function AdminMarkdownEditor({
                 >
                   {isPending ? copy.checking : copy.enterEditor}
                 </button>
-              </div>
-            </div>
-
-            <div className="surface-subtle rounded-[1.6rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.46)] p-4">
-              <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
-                {copy.supportedMarkdown}
-              </div>
-              <div className="text-sm leading-7 text-[var(--muted)]">
-                {copy.markdownFeatures}
               </div>
             </div>
           </div>
