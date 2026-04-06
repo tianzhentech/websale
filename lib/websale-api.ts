@@ -1,7 +1,7 @@
 import "server-only";
 
 import {
-  isGmailAddress,
+  isEmailAddress,
   validateBulkAccountText,
   type AccountFormatIssueCode,
   type InvalidBulkAccountLine,
@@ -234,11 +234,11 @@ function isRunMode(value: unknown): value is RunMode {
 function resolveBulkLineIssueLabel(code: AccountFormatIssueCode) {
   switch (code) {
     case "missing_separator":
-      return "未使用 Gmail---Password---2fa密钥 格式";
-    case "missing_gmail":
-      return "缺少 Gmail 邮箱";
-    case "invalid_gmail":
-      return "Gmail 邮箱不合法";
+      return "未使用 Email---Password---2FA密钥 格式";
+    case "missing_email":
+      return "缺少邮箱";
+    case "invalid_email":
+      return "邮箱格式不合法";
     case "missing_password":
       return "缺少密码";
     case "missing_twofa":
@@ -856,8 +856,8 @@ export async function queueExchangeTask({
   if (!normalizedEmail) {
     throw new WebSaleApiError(400, "Email is required.");
   }
-  if (!isGmailAddress(normalizedEmail)) {
-    throw new WebSaleApiError(400, "目前仅支持 Gmail 邮箱。");
+  if (!isEmailAddress(normalizedEmail)) {
+    throw new WebSaleApiError(400, "邮箱格式不合法。");
   }
   if (!normalizedPassword) {
     throw new WebSaleApiError(400, "Password is required.");

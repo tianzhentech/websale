@@ -1,7 +1,7 @@
 export type AccountFormatIssueCode =
   | "missing_separator"
-  | "missing_gmail"
-  | "invalid_gmail"
+  | "missing_email"
+  | "invalid_email"
   | "missing_password"
   | "missing_twofa"
   | "invalid_twofa";
@@ -14,7 +14,7 @@ export type BulkAccountInputLine = {
 };
 
 export type NormalizedAccountRecord = {
-  gmail: string;
+  email: string;
   password: string;
   twofaSecret: string;
 };
@@ -61,14 +61,75 @@ export function stripOuterQuotes(value: string) {
   return trimmed;
 }
 
-export function isGmailAddress(value: string) {
-  return /^[^@\s]+@gmail\.com$/i.test(value.trim());
+const EMAIL_CANDIDATE_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}/i;
+
+function normalizeEmailCandidate(value: string) {
+  return stripOuterQuotes(value)
+    .replace(/^mailto:/i, "")
+    .replace(/^[<(]+/, "")
+    .replace(/[)>]+$/, "")
+    .replace(/[;:!?]+$/, "")
+    .replace(/\.$/, "")
+    .trim();
 }
 
-export function normalizeGmail(value: string) {
-  const candidate = stripOuterQuotes(value);
-  const match = candidate.match(/[A-Z0-9._%+-]+@gmail\.com/gi);
-  return match?.[0]?.toLowerCase() || "";
+function hasValidEmailStructure(value: string) {
+  if (!value || value.length > 320 || /\.\./.test(value)) {
+    return false;
+  }
+
+  const parts = value.split("@");
+  if (parts.length !== 2) {
+    return false;
+  }
+
+  const [localPart, domain] = parts;
+  if (!localPart || !domain || localPart.length > 64 || domain.length > 255) {
+    return false;
+  }
+  if (!/^[A-Z0-9._%+-]+$/i.test(localPart)) {
+    return false;
+  }
+  if (domain.startsWith(".") || domain.endsWith(".")) {
+    return false;
+  }
+
+  const labels = domain.split(".");
+  if (labels.length < 2) {
+    return false;
+  }
+  if (
+    labels.some(
+      (label) =>
+        !label ||
+        label.startsWith("-") ||
+        label.endsWith("-") ||
+        !/^[A-Z0-9-]+$/i.test(label)
+    )
+  ) {
+    return false;
+  }
+
+  return /^[A-Z]{2,63}$/i.test(labels[labels.length - 1] || "");
+}
+
+export function isEmailAddress(value: string) {
+  return hasValidEmailStructure(normalizeEmailCandidate(value));
+}
+
+export function normalizeEmail(value: string) {
+  const candidate = normalizeEmailCandidate(value);
+  if (hasValidEmailStructure(candidate)) {
+    return candidate;
+  }
+
+  const match = candidate.match(EMAIL_CANDIDATE_PATTERN);
+  if (!match?.[0]) {
+    return "";
+  }
+
+  const normalizedMatch = normalizeEmailCandidate(match[0]);
+  return hasValidEmailStructure(normalizedMatch) ? normalizedMatch : "";
 }
 
 export function normalizePassword(value: string) {
@@ -118,7 +179,7 @@ export function isValidTwofaSecret(value: string) {
 }
 
 export function formatNormalizedAccountRecord(record: NormalizedAccountRecord) {
-  return `${record.gmail}---${record.password}---${record.twofaSecret}`;
+  return `${record.email}---${record.password}---${record.twofaSecret}`;
 }
 
 export function validateBulkAccountLine(
@@ -145,19 +206,19 @@ export function validateBulkAccountLine(
     };
   }
 
-  const gmail = normalizeGmail(match[1] || "");
+  const email = normalizeEmail(match[1] || "");
   if (!(match[1] || "").trim()) {
     return {
       ok: false,
-      code: "missing_gmail",
+      code: "missing_email",
       lineNumber,
       raw: line,
     };
   }
-  if (!gmail || !isGmailAddress(gmail)) {
+  if (!email || !isEmailAddress(email)) {
     return {
       ok: false,
-      code: "invalid_gmail",
+      code: "invalid_email",
       lineNumber,
       raw: line,
     };
@@ -194,7 +255,7 @@ export function validateBulkAccountLine(
   }
 
   const record = {
-    gmail,
+    email,
     password,
     twofaSecret,
   };

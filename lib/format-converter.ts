@@ -3,7 +3,7 @@ import "server-only";
 import { readServerEnv } from "@/lib/server-env";
 import {
   formatNormalizedAccountRecord,
-  normalizeGmail,
+  normalizeEmail,
   normalizePassword,
   normalizeTwofaSecret,
   splitBulkAccountInputLines,
@@ -15,8 +15,8 @@ import {
 type JsonObject = Record<string, unknown>;
 
 type ModelAccountRecord = {
-  gmail?: unknown;
   email?: unknown;
+  gmail?: unknown;
   password?: unknown;
   twofa_secret?: unknown;
   twofa?: unknown;
@@ -84,7 +84,7 @@ function buildFormatConverterMessages(source: string, retryReason?: string) {
     {
       role: "system",
       content:
-        "You normalize one noisy account line for an operations dashboard. Return JSON only, without markdown fences or explanations. The schema must be {\"gmail\":\"string\",\"password\":\"string\",\"twofa_secret\":\"string\"}. Rules: extract at most one Gmail account from this single line; ignore non-Gmail emails; preserve passwords exactly except trimming outer whitespace; if a TOTP otpauth URL is present, return only its secret value; if any field is missing, use an empty string; do not invent values.",
+        "You normalize one noisy account line for an operations dashboard. Return JSON only, without markdown fences or explanations. The schema must be {\"email\":\"string\",\"password\":\"string\",\"twofa_secret\":\"string\"}. Rules: extract at most one account email from this single line; accept any valid email domain; preserve passwords exactly except trimming outer whitespace; if a TOTP otpauth URL is present, return only its secret value; if any field is missing, use an empty string; do not invent values.",
     },
     {
       role: "user",
@@ -158,13 +158,13 @@ function parseJsonPayload(text: string) {
 }
 
 function normalizeAccountRecord(record: ModelAccountRecord): NormalizedAccountRecord | null {
-  const gmail = normalizeGmail(asText(record.gmail || record.email));
-  if (!gmail) {
+  const email = normalizeEmail(asText(record.email || record.gmail));
+  if (!email) {
     return null;
   }
 
   return {
-    gmail,
+    email,
     password: normalizePassword(asText(record.password)),
     twofaSecret: normalizeTwofaSecret(
       asText(
@@ -203,11 +203,11 @@ function normalizeRecordToLine(record: ModelAccountRecord | null) {
 function resolveIssueReason(code: InvalidBulkAccountLine["code"]) {
   switch (code) {
     case "missing_separator":
-      return "the output must use Gmail---Password---2faSecret";
-    case "missing_gmail":
-      return "gmail is missing";
-    case "invalid_gmail":
-      return "gmail must be a valid @gmail.com address";
+      return "the output must use Email---Password---2faSecret";
+    case "missing_email":
+      return "email is missing";
+    case "invalid_email":
+      return "email must be a valid email address";
     case "missing_password":
       return "password is missing";
     case "missing_twofa":

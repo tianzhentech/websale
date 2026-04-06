@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import {
-  isGmailAddress,
+  isEmailAddress,
   validateBulkAccountLine,
   validateBulkAccountText,
   type AccountFormatIssueCode,
@@ -196,7 +196,7 @@ type FormatConvertResponse = {
 const CDK_STORAGE_KEY = "pixel-websale-cdk-code";
 const ENQUEUE_HISTORY_STORAGE_KEY = "pixel-websale-enqueue-history";
 const MAX_ENQUEUE_HISTORY_RECORDS = 48;
-const BULK_TEXT_PLACEHOLDER = "demo.user@gmail.com---Passw0rd!---JBSWY3DPEHPK3PXP";
+const BULK_TEXT_PLACEHOLDER = "demo.user@example.com---Passw0rd!---JBSWY3DPEHPK3PXP";
 const TASK_LIST_PAGE_SIZE = 10;
 const transactionGridTemplate =
   "minmax(10rem,1.7fr) minmax(8rem,1.1fr) minmax(4.5rem,0.7fr) minmax(5.5rem,0.9fr) minmax(4.5rem,0.8fr) minmax(4.5rem,0.8fr) minmax(16rem,4fr)";
@@ -211,7 +211,7 @@ const LANGUAGE_COPY = {
     cdkChecking: "CDK 正在自动检测，请稍等。",
     validCdkRequired: "请输入有效的 CDK 后再提交任务。",
     enterEmail: "请输入邮箱。",
-    gmailOnly: "目前仅支持 Gmail 邮箱。",
+    invalidEmail: "邮箱格式不合法。",
     enterPassword: "请输入密码。",
     enterTotp: "请输入 2FA 密钥。",
     enterBulk: "请输入批量账号内容。",
@@ -232,7 +232,7 @@ const LANGUAGE_COPY = {
     email: "邮箱",
     password: "密码",
     totpKey: "2FA 密钥",
-    emailPlaceholder: "输入 Gmail 邮箱",
+    emailPlaceholder: "输入谷歌个人账号邮箱",
     passwordPlaceholder: "输入密码",
     totpPlaceholder: "输入 2FA 密钥",
     bulkHelp: "每行 1 个账号，必须使用 ",
@@ -241,7 +241,7 @@ const LANGUAGE_COPY = {
     bulkFormatting: "转换中...",
     bulkFormatApplied: "已转换并写回 {count} 条账号。",
     bulkFormatPartial: "已成功转换 {count} 条账号，仍有格式不合规的行需要手动修正。",
-    bulkFormatNoMatch: "没有识别到可转换的 Gmail 账号，已保留原始输入。",
+    bulkFormatNoMatch: "没有识别到可转换的邮箱账号，已保留原始输入。",
     bulkFormatFailed: "格式转换失败。",
     bulkSubmitInvalid: "以下行格式不符合要求：{lines}。请先修正后再提交。",
     expandBulkEditor: "放大编辑",
@@ -390,9 +390,9 @@ const LANGUAGE_COPY = {
     bulkIssueLine: "第 {line} 行：{reason}",
     bulkIssueMore: "以及另外 {count} 行",
     bulkIssueLabels: {
-      missing_separator: "未使用 Gmail---Password---2FA密钥 格式",
-      missing_gmail: "缺少 Gmail 邮箱",
-      invalid_gmail: "Gmail 邮箱不合法",
+      missing_separator: "未使用 Email---Password---2FA密钥 格式",
+      missing_email: "缺少邮箱",
+      invalid_email: "邮箱格式不合法",
       missing_password: "缺少密码",
       missing_twofa: "缺少 2FA 密钥",
       invalid_twofa: "2FA 密钥不合法",
@@ -407,7 +407,7 @@ const LANGUAGE_COPY = {
     cdkChecking: "CDK validation is in progress. Please wait.",
     validCdkRequired: "Please enter a valid CDK before submitting.",
     enterEmail: "Please enter an email.",
-    gmailOnly: "Only Gmail accounts are supported right now.",
+    invalidEmail: "Please enter a valid email address.",
     enterPassword: "Please enter a password.",
     enterTotp: "Please enter a 2FA key.",
     enterBulk: "Please enter bulk account content.",
@@ -428,7 +428,7 @@ const LANGUAGE_COPY = {
     email: "Email",
     password: "Password",
     totpKey: "2FA Key",
-    emailPlaceholder: "Enter a Gmail address",
+    emailPlaceholder: "Enter your Google account email",
     passwordPlaceholder: "Enter password",
     totpPlaceholder: "Enter 2FA key",
     bulkHelp: "Each line must use ",
@@ -437,7 +437,7 @@ const LANGUAGE_COPY = {
     bulkFormatting: "Formatting...",
     bulkFormatApplied: "Normalized {count} account(s) and filled the input.",
     bulkFormatPartial: "Normalized {count} account(s), but some lines still need manual fixes.",
-    bulkFormatNoMatch: "No convertible Gmail accounts were found. The original input was kept.",
+    bulkFormatNoMatch: "No convertible email accounts were found. The original input was kept.",
     bulkFormatFailed: "Format conversion failed.",
     bulkSubmitInvalid: "These lines are not in a valid format: {lines}. Please fix them before submitting.",
     expandBulkEditor: "Expand Editor",
@@ -586,9 +586,9 @@ const LANGUAGE_COPY = {
     bulkIssueLine: "Line {line}: {reason}",
     bulkIssueMore: "and {count} more line(s)",
     bulkIssueLabels: {
-      missing_separator: "must use the Gmail---Password---2FA key format",
-      missing_gmail: "missing Gmail address",
-      invalid_gmail: "invalid Gmail address",
+      missing_separator: "must use the Email---Password---2FA key format",
+      missing_email: "missing email address",
+      invalid_email: "invalid email address",
       missing_password: "missing password",
       missing_twofa: "missing 2FA key",
       invalid_twofa: "invalid 2FA key",
@@ -1708,7 +1708,7 @@ export function ExchangeStudio() {
           code: normalizedCode,
           run_mode: plan.runMode,
           account_mode: "single",
-          email: validation.record.gmail,
+          email: validation.record.email,
           password: validation.record.password,
           twofa_url: validation.record.twofaSecret,
           bulk_text: "",
@@ -1917,8 +1917,8 @@ export function ExchangeStudio() {
         setError(copy.enterEmail);
         return;
       }
-      if (!isGmailAddress(normalizedEmail)) {
-        setError(copy.gmailOnly);
+      if (!isEmailAddress(normalizedEmail)) {
+        setError(copy.invalidEmail);
         return;
       }
       if (!normalizedPassword) {
@@ -2205,7 +2205,7 @@ export function ExchangeStudio() {
                 <div className="rounded-[1.2rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.08)] px-4 py-3 text-sm leading-7 text-[var(--teal)]">
                   {copy.bulkHelp}
                   <span className="font-mono">
-                    {isChinese ? "Gmail---Password---2FA密钥" : "Gmail---Password---2FA key"}
+                    {isChinese ? "Email---Password---2FA密钥" : "Email---Password---2FA key"}
                   </span>
                   {isChinese ? " 格式。" : " format."}
                 </div>
