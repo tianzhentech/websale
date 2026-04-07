@@ -2358,11 +2358,11 @@ export function ExchangeStudio() {
                   key={item.label}
                   className="surface-card aspect-square rounded-[0.95rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,252,246,0.74)] p-2.25"
                 >
-                  <div className="flex h-full flex-col justify-between">
-                    <div className="text-xs font-semibold tracking-[0.03em] text-[var(--muted)]">
+                  <div className="flex h-full flex-col items-center justify-between text-center">
+                    <div className="w-full text-center text-xs font-semibold tracking-[0.03em] text-[var(--muted)]">
                       {item.label}
                     </div>
-                    <div className="text-[1.55rem] font-semibold leading-none tracking-[-0.06em] text-[var(--accent-deep)] sm:text-[1.7rem]">
+                    <div className="text-center text-[1.55rem] font-semibold leading-none tracking-[-0.06em] text-[var(--accent-deep)] sm:text-[1.7rem]">
                       {typeof item.value === "number" ? item.value : "—"}
                     </div>
                   </div>

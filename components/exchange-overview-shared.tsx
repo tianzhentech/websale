@@ -132,10 +132,6 @@ function asTaskId(value: unknown) {
   return Number.isFinite(number) && number > 0 ? Math.trunc(number) : null;
 }
 
-function resolveCount(value: unknown, fallback: number) {
-  return value === undefined || value === null ? fallback : asCount(value);
-}
-
 function normalizeActivityCell(cell: OverviewActivityCell): ActiveActivityCell | null {
   if (!cell || !isActiveActivityTone(cell.tone)) {
     return null;
@@ -390,10 +386,10 @@ export function useExchangeOverviewSnapshot(language: Language): ExchangeOvervie
     copy,
     error,
     taskCounts: {
-      running: resolveCount(overview?.counts?.tasks_running, activityTotals.running),
-      queued: resolveCount(overview?.counts?.tasks_queued, activityTotals.queued),
-      success: resolveCount(overview?.counts?.tasks_success, activityTotals.success),
-      failed: resolveCount(overview?.counts?.tasks_failed, activityTotals.failed),
+      running: activityTotals.running,
+      queued: activityTotals.queued,
+      success: activityTotals.success,
+      failed: activityTotals.failed + activityTotals.cancelled,
     },
     activityTotals,
     activityWindowMinutes,
@@ -413,7 +409,7 @@ export function OverviewActivityCard({
   className?: string;
   compact?: boolean;
 }) {
-  const { copy, error, activityTotals, activityWindowMinutes, totalCount, windowCells } = snapshot;
+  const { copy, error, activityTotals, activityWindowMinutes, windowCells } = snapshot;
   const [heatmapColumns, setHeatmapColumns] = useState(12);
   const [heatmapCellSizePx, setHeatmapCellSizePx] = useState<number | null>(null);
   const [heatmapGridHeightPx, setHeatmapGridHeightPx] = useState<number | null>(null);
@@ -546,8 +542,7 @@ export function OverviewActivityCard({
             compact ? "text-[0.7rem]" : "text-xs"
           )}
         >
-          {copy.totalLabel.replace("{minutes}", String(activityWindowMinutes))}: {totalCount}
-          {todayCells.overflowCount ? ` · +${todayCells.overflowCount} ${copy.overflowLabel}` : ""}
+          {copy.totalLabel.replace("{minutes}", String(activityWindowMinutes))}
         </div>
       </div>
 
