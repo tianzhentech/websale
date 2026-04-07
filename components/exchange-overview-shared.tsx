@@ -105,8 +105,6 @@ export type ExchangeOverviewSnapshot = {
 };
 
 const DEFAULT_HEATMAP_ROWS = 6;
-const HEATMAP_CARD_PADDING_REM = 0.75;
-const HEATMAP_SECTION_GAP_REM = 0.75;
 const HEATMAP_CELL_GAP_REM = 0.375;
 
 function classNames(...values: Array<string | false | null | undefined>) {
@@ -409,10 +407,11 @@ export function OverviewActivityCard({
   className?: string;
   compact?: boolean;
 }) {
-  const { copy, error, activityTotals, activityWindowMinutes, windowCells } = snapshot;
+  const { copy, error, taskCounts, activityTotals, activityWindowMinutes, windowCells } = snapshot;
   const [heatmapColumns, setHeatmapColumns] = useState(12);
   const [heatmapCellSizePx, setHeatmapCellSizePx] = useState<number | null>(null);
   const [heatmapGridHeightPx, setHeatmapGridHeightPx] = useState<number | null>(null);
+  const [heatmapGridWidthPx, setHeatmapGridWidthPx] = useState<number | null>(null);
   const heatmapCardRef = useRef<HTMLElement | null>(null);
   const heatmapHeaderRef = useRef<HTMLDivElement | null>(null);
 
@@ -423,16 +422,19 @@ export function OverviewActivityCard({
     }
 
     const applyColumns = () => {
+      const cardStyles = window.getComputedStyle(card);
+      const paddingLeft = Number.parseFloat(cardStyles.paddingLeft) || 0;
+      const paddingRight = Number.parseFloat(cardStyles.paddingRight) || 0;
+      const paddingTop = Number.parseFloat(cardStyles.paddingTop) || 0;
+      const paddingBottom = Number.parseFloat(cardStyles.paddingBottom) || 0;
       const rootFontSize =
         Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
-      const cardPadding = HEATMAP_CARD_PADDING_REM * rootFontSize;
-      const sectionGap = HEATMAP_SECTION_GAP_REM * rootFontSize;
       const cellGap = HEATMAP_CELL_GAP_REM * rootFontSize;
       const headerHeight = heatmapHeaderRef.current?.getBoundingClientRect().height || 0;
       const { width: cardWidth, height: cardHeight } = card.getBoundingClientRect();
-      const contentWidth = Math.max(0, cardWidth - cardPadding * 2);
-      const contentHeight = Math.max(0, cardHeight - cardPadding * 2);
-      const availableGridHeight = Math.max(0, contentHeight - headerHeight - sectionGap);
+      const contentWidth = Math.max(0, cardWidth - paddingLeft - paddingRight);
+      const contentHeight = Math.max(0, cardHeight - paddingTop - paddingBottom);
+      const availableGridHeight = Math.max(0, contentHeight - headerHeight);
       const widthBasedColumns = resolveHeatmapColumns(contentWidth);
       const isLargeViewport = window.innerWidth >= 1024;
 
@@ -440,6 +442,7 @@ export function OverviewActivityCard({
         setHeatmapColumns(widthBasedColumns);
         setHeatmapCellSizePx(null);
         setHeatmapGridHeightPx(null);
+        setHeatmapGridWidthPx(null);
         return;
       }
 
@@ -454,6 +457,12 @@ export function OverviewActivityCard({
       setHeatmapColumns(balancedLayout.columns);
       setHeatmapCellSizePx(balancedLayout.cellSizePx);
       setHeatmapGridHeightPx(balancedLayout.gridHeightPx);
+      setHeatmapGridWidthPx(
+        balancedLayout.cellSizePx
+          ? balancedLayout.columns * balancedLayout.cellSizePx +
+              cellGap * Math.max(0, balancedLayout.columns - 1)
+          : null
+      );
     };
 
     applyColumns();
@@ -493,18 +502,25 @@ export function OverviewActivityCard({
           gridTemplateColumns: `repeat(${heatmapColumns}, ${heatmapCellSizePx}px)`,
           gridAutoRows: `${heatmapCellSizePx}px`,
           justifyContent: "center" as const,
-          alignContent: "center" as const,
+          alignContent: "start" as const,
         }
       : {
           gridTemplateColumns: `repeat(${heatmapColumns}, minmax(0, 1fr))`,
         };
+  const heatmapHeaderStyle = heatmapGridWidthPx
+    ? {
+        width: `${heatmapGridWidthPx}px`,
+        maxWidth: "100%",
+        marginInline: "auto" as const,
+      }
+    : undefined;
 
   return (
     <article
       ref={heatmapCardRef}
       className={classNames(
         "surface-card flex w-full min-w-0 flex-col rounded-[1.4rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,252,246,0.74)]",
-        compact ? "gap-2.5 p-2.5" : "gap-3 p-3",
+        compact ? "px-2.5 pb-2.5 pt-0" : "px-3 pb-3 pt-0",
         className
       )}
     >
@@ -512,8 +528,9 @@ export function OverviewActivityCard({
         ref={heatmapHeaderRef}
         className={classNames(
           "flex flex-wrap items-center justify-between",
-          compact ? "gap-2" : "gap-3"
+          compact ? "gap-2 py-2.5" : "gap-3 py-3"
         )}
+        style={heatmapHeaderStyle}
       >
         <div
           className={classNames(
@@ -522,19 +539,23 @@ export function OverviewActivityCard({
           )}
         >
           {[
-            { tone: "success" as const, label: copy.successLegend },
-            { tone: "failure" as const, label: copy.failureLegend },
-            { tone: "running" as const, label: copy.runningLegend },
-            { tone: "queued" as const, label: copy.queuedLegend },
+            { tone: "success" as const, label: copy.successLegend, value: taskCounts.success },
+            { tone: "failure" as const, label: copy.failureLegend, value: taskCounts.failed },
+            { tone: "running" as const, label: copy.runningLegend, value: taskCounts.running },
+            { tone: "queued" as const, label: copy.queuedLegend, value: taskCounts.queued },
           ].map((legend) => (
-            <span key={legend.label} className="inline-flex items-center gap-2">
+            <span key={legend.label} className="inline-flex items-center gap-2 whitespace-nowrap">
               <span
                 className="activity-legend-swatch"
                 style={{ backgroundColor: resolveToneColor(legend.tone) }}
               />
-              {legend.label}
+              <span className="inline-flex items-center gap-1">
+                <span>{legend.label}</span>
+                <span>:</span>
+                <span>{legend.value}</span>
+              </span>
             </span>
-            ))}
+          ))}
         </div>
         <div
           className={classNames(
@@ -574,7 +595,12 @@ export function OverviewActivityCard({
       </div>
 
       {error ? (
-        <div className="rounded-[1rem] border border-[rgba(179,79,59,0.16)] bg-[rgba(179,79,59,0.08)] px-3 py-2 text-xs leading-6 text-[#973d2c]">
+        <div
+          className={classNames(
+            "rounded-[1rem] border border-[rgba(179,79,59,0.16)] bg-[rgba(179,79,59,0.08)] px-3 py-2 text-xs leading-6 text-[#973d2c]",
+            compact ? "mt-2.5" : "mt-3"
+          )}
+        >
           {error}
         </div>
       ) : null}

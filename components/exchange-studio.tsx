@@ -1039,25 +1039,6 @@ export function ExchangeStudio() {
   const isChinese = language === "zh";
   const copy = isChinese ? LANGUAGE_COPY.zh : LANGUAGE_COPY.en;
   const locale = resolveLocale(language);
-  const overviewItems = [
-    {
-      label: overviewSnapshot.copy.runningLegend,
-      value: overviewSnapshot.taskCounts.running,
-    },
-    {
-      label: overviewSnapshot.copy.queuedLegend,
-      value: overviewSnapshot.taskCounts.queued,
-    },
-    {
-      label: overviewSnapshot.copy.successLegend,
-      value: overviewSnapshot.taskCounts.success,
-    },
-    {
-      label: overviewSnapshot.copy.failureLegend,
-      value: overviewSnapshot.taskCounts.failed,
-    },
-  ];
-
   const defaultRunModes: RunModeInfo[] = [
     { run_mode: "extract_link", label: copy.runModeLabels.extract_link, price: 5, enabled: true },
     { run_mode: "subscription", label: copy.runModeLabels.subscription, price: 8, enabled: true },
@@ -2351,30 +2332,12 @@ export function ExchangeStudio() {
 
       <article className="panel p-5 md:p-6">
         <div className="grid gap-4">
-          <div className="grid gap-3 xl:grid-cols-[11.25rem_minmax(0,1fr)] xl:items-start">
-            <div className="grid auto-rows-max content-start gap-2 sm:grid-cols-2 xl:grid-cols-2">
-              {overviewItems.map((item) => (
-                <article
-                  key={item.label}
-                  className="surface-card aspect-square rounded-[0.95rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,252,246,0.74)] p-2.25"
-                >
-                  <div className="flex h-full flex-col items-center justify-between text-center">
-                    <div className="w-full text-center text-xs font-semibold tracking-[0.03em] text-[var(--muted)]">
-                      {item.label}
-                    </div>
-                    <div className="text-center text-[1.55rem] font-semibold leading-none tracking-[-0.06em] text-[var(--accent-deep)] sm:text-[1.7rem]">
-                      {typeof item.value === "number" ? item.value : "—"}
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-
+          <div className="grid gap-3">
             <OverviewActivityCard
               snapshot={overviewSnapshot}
-              rows={4}
+              rows={5}
               compact
-              className="min-h-[10.5rem] xl:h-[11.25rem]"
+              className="min-h-[12rem] xl:h-[13.25rem]"
             />
           </div>
 
@@ -3065,7 +3028,7 @@ function RetryConfirmDialog({
               </div>
             </div>
 
-            <div className="grid gap-3 rounded-[1.2rem] border p-4">
+            <div className="surface-card grid gap-3 rounded-[1.2rem] border p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
@@ -3124,11 +3087,16 @@ function RetryConfirmDialog({
                         key={item.taskId}
                         className={classNames(
                           "surface-card grid gap-3 rounded-[1rem] border p-3 transition",
-                          item.selected && item.selectable
-                            ? "border-[rgba(18,92,95,0.28)] bg-[rgba(18,92,95,0.08)]"
-                            : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)]",
                           item.selectable && !isPending ? "cursor-pointer" : "cursor-default"
                         )}
+                        style={
+                          item.selected && item.selectable
+                            ? {
+                                borderColor: "var(--button-secondary-border)",
+                                background: "var(--button-secondary-bg)",
+                              }
+                            : undefined
+                        }
                       >
                         <div className="flex items-start gap-3">
                           {confirmation.scope === "batch" ? (
@@ -3154,7 +3122,7 @@ function RetryConfirmDialog({
                             </div>
 
                             <div className="mt-3 grid gap-3 md:grid-cols-2">
-                              <div className="rounded-[0.9rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-3">
+                              <div className="surface-soft rounded-[0.9rem] border p-3">
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                                   {copy.retryConfirmAccountLabel}
                                 </div>
@@ -3163,11 +3131,11 @@ function RetryConfirmDialog({
                                 </div>
                               </div>
 
-                              <div className="rounded-[0.9rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)] p-3">
+                              <div className="surface-soft rounded-[0.9rem] border p-3">
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                                   {copy.retryConfirmFailureLabel}
                                 </div>
-                                <div className="mt-2 grid gap-1.5 text-xs leading-6 text-[#973d2c]">
+                                <div className="mt-2 grid gap-1.5 text-xs leading-6 text-[var(--notice-error-text)]">
                                   {item.taskError ? (
                                     <div>
                                       {copy.taskError}
