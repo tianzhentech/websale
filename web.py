@@ -35,7 +35,7 @@ RUN_MODE_LABELS = {
     "subscription": "订阅模式",
 }
 RUN_MODE_PRICING = {
-    "extract_link": 5,
+    "extract_link": 4,
     "subscription": 8,
 }
 STATUS_LABELS = {
@@ -203,12 +203,33 @@ def _normalize_detail_payload(detail: dict[str, object]) -> dict[str, object]:
     }
 
 
+def normalize_pricing_payload(value: object) -> dict[str, int]:
+    pricing = dict(RUN_MODE_PRICING)
+    if isinstance(value, dict):
+        source = value.get("pricing") if isinstance(value.get("pricing"), dict) else value
+        if isinstance(source, dict):
+            for run_mode in RUN_MODE_LABELS:
+                next_value = source.get(run_mode)
+                try:
+                    parsed = int(next_value)
+                except (TypeError, ValueError):
+                    continue
+                if parsed > 0:
+                    pricing[run_mode] = parsed
+    return pricing
+
+
 def fetch_remote_cdk_detail(code: str) -> dict[str, object]:
     normalized_code = str(code or "").strip()
     if not normalized_code:
         raise HTTPException(status_code=400, detail="CDK code is required.")
     detail = _backend_request("GET", f"/api/cdks/{quote(normalized_code, safe='')}")
     return _normalize_detail_payload(detail)
+
+
+def fetch_remote_pricing() -> dict[str, int]:
+    payload = _backend_request("GET", "/api/settings/pricing")
+    return normalize_pricing_payload(payload)
 
 
 def preview_exchange(code: str) -> dict[str, object]:
@@ -320,13 +341,14 @@ def health():
 
 @app.get("/api/config")
 def get_config():
+    pricing = fetch_remote_pricing()
     return {
         "generated_at": utc_now(),
         "site_title": resolve_site_title(),
         "backend_api_base_url": resolve_backend_api_base_url(),
-        "pricing": dict(RUN_MODE_PRICING),
+        "pricing": pricing,
         "run_modes": [
-            {"run_mode": run_mode, "label": label, "price": RUN_MODE_PRICING.get(run_mode, 0)}
+            {"run_mode": run_mode, "label": label, "price": pricing.get(run_mode, 0)}
             for run_mode, label in RUN_MODE_LABELS.items()
         ],
     }

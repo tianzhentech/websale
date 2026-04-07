@@ -1040,7 +1040,7 @@ export function ExchangeStudio() {
   const copy = isChinese ? LANGUAGE_COPY.zh : LANGUAGE_COPY.en;
   const locale = resolveLocale(language);
   const defaultRunModes: RunModeInfo[] = [
-    { run_mode: "extract_link", label: copy.runModeLabels.extract_link, price: 5, enabled: true },
+    { run_mode: "extract_link", label: copy.runModeLabels.extract_link, price: 4, enabled: true },
     { run_mode: "subscription", label: copy.runModeLabels.subscription, price: 8, enabled: true },
   ];
 

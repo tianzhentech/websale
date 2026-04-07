@@ -146,7 +146,7 @@ const RUN_MODE_LABELS: Record<RunMode, string> = {
 };
 
 const RUN_MODE_PRICING: Record<RunMode, number> = {
-  extract_link: 5,
+  extract_link: 4,
   subscription: 8,
 };
 
@@ -360,6 +360,11 @@ function normalizePricing(value: unknown): Record<RunMode, number> {
   }
 
   return pricing;
+}
+
+async function fetchRemotePricing() {
+  const payload = await backendRequest("GET", "/api/settings/pricing");
+  return normalizePricing(isRecord(payload.pricing) ? payload.pricing : payload);
 }
 
 function normalizeTransactions(value: unknown): CdkTransaction[] {
@@ -695,19 +700,20 @@ function ensureRunModeEnabled(runMode: RunMode, availability: RunModeAvailabilit
 }
 
 export async function buildConfigPayload() {
-  const [backendApiBaseUrl, availability] = await Promise.all([
+  const [backendApiBaseUrl, availability, pricing] = await Promise.all([
     resolveBackendApiBaseUrl(),
     resolveRunModeAvailability(),
+    fetchRemotePricing(),
   ]);
   return {
     generated_at: utcNow(),
     site_title: resolveSiteTitle(),
     backend_api_base_url: backendApiBaseUrl,
-    pricing: { ...RUN_MODE_PRICING },
+    pricing,
     run_modes: (Object.keys(RUN_MODE_LABELS) as RunMode[]).map((runMode) => ({
       run_mode: runMode,
       label: RUN_MODE_LABELS[runMode],
-      price: RUN_MODE_PRICING[runMode],
+      price: pricing[runMode],
       enabled: availability[runMode],
       affordable: false,
       shortfall: 0,
