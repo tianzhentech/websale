@@ -1038,6 +1038,14 @@ textarea:focus {
   transform: none;
 }
 
+.theme-button-compact {
+  min-height: 1.75rem;
+  min-width: auto !important;
+  padding: 0.28rem 0.72rem !important;
+  font-size: 0.75rem !important;
+  line-height: 1 !important;
+}
+
 .segmented-control-indicator {
   background: var(--button-primary-bg);
   box-shadow: var(--button-shadow);

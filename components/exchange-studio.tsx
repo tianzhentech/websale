@@ -2436,7 +2436,7 @@ export function ExchangeStudio() {
                               onClick={() => buildSingleRetryConfirmation(item)}
                               disabled={!canRetryItem || isPending}
                               className={classNames(
-                                "min-w-[3.75rem] rounded-full px-3 py-1.5 text-xs font-semibold",
+                                "theme-button-compact",
                                 !canRetryItem || isPending
                                   ? "theme-button-disabled"
                                   : "theme-button-secondary"
