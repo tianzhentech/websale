@@ -9,7 +9,7 @@ export function HomeShell({
   studio,
   noticeBoard,
 }: {
-  overview: ReactNode;
+  overview?: ReactNode;
   studio: ReactNode;
   noticeBoard: ReactNode;
 }) {
@@ -27,9 +27,11 @@ export function HomeShell({
 
         {noticeBoard}
 
-        <section className="panel overflow-hidden">
-          {overview}
-        </section>
+        {overview ? (
+          <section className="panel overflow-hidden">
+            {overview}
+          </section>
+        ) : null}
 
         {studio}
       </div>

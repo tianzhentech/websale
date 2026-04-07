@@ -60,8 +60,8 @@ function resolveLanguage(): Language {
 }
 
 export function UiPreferencesProvider({ children }: { children: ReactNode }) {
-  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<ThemeMode>("light");
+  const [themePreference, setThemePreference] = useState<ThemePreference>("dark");
+  const [resolvedTheme, setResolvedTheme] = useState<ThemeMode>("dark");
   const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE);
 
   useEffect(() => {
@@ -70,7 +70,8 @@ export function UiPreferencesProvider({ children }: { children: ReactNode }) {
       setThemePreference(storedTheme);
       setResolvedTheme(resolveTheme(storedTheme));
     } else {
-      setResolvedTheme(resolveTheme("system"));
+      setThemePreference("dark");
+      setResolvedTheme("dark");
     }
 
     setLanguage(resolveLanguage());

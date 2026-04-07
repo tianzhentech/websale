@@ -1,4 +1,3 @@
-import { ExchangeOverview } from "@/components/exchange-overview";
 import { ExchangeStudio } from "@/components/exchange-studio";
 import { HomeShell } from "@/components/home-shell";
 import { MarkdownNoticeBoard } from "@/components/markdown-notice-board";
@@ -13,7 +12,6 @@ export default async function HomePage() {
   return (
     <HomeShell
       noticeBoard={<MarkdownNoticeBoard sourceMarkdown={sourceMarkdown} />}
-      overview={<ExchangeOverview />}
       studio={<ExchangeStudio />}
     />
   );

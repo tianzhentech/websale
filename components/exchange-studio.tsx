@@ -8,6 +8,10 @@ import {
   validateBulkAccountText,
   type AccountFormatIssueCode,
 } from "@/lib/account-format";
+import {
+  OverviewActivityCard,
+  useExchangeOverviewSnapshot,
+} from "@/components/exchange-overview-shared";
 import { useUiPreferences } from "@/components/ui-preferences-provider";
 import { resolveLocale } from "@/lib/ui-language";
 
@@ -998,6 +1002,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function ExchangeStudio() {
   const { language } = useUiPreferences();
+  const overviewSnapshot = useExchangeOverviewSnapshot(language);
   const [accountMode, setAccountMode] = useState<AccountMode>("single");
   const [code, setCode] = useState("");
   const [email, setEmail] = useState("");
@@ -1034,6 +1039,24 @@ export function ExchangeStudio() {
   const isChinese = language === "zh";
   const copy = isChinese ? LANGUAGE_COPY.zh : LANGUAGE_COPY.en;
   const locale = resolveLocale(language);
+  const overviewItems = [
+    {
+      label: overviewSnapshot.copy.runningLegend,
+      value: overviewSnapshot.taskCounts.running,
+    },
+    {
+      label: overviewSnapshot.copy.queuedLegend,
+      value: overviewSnapshot.taskCounts.queued,
+    },
+    {
+      label: overviewSnapshot.copy.successLegend,
+      value: overviewSnapshot.taskCounts.success,
+    },
+    {
+      label: overviewSnapshot.copy.failureLegend,
+      value: overviewSnapshot.taskCounts.failed,
+    },
+  ];
 
   const defaultRunModes: RunModeInfo[] = [
     { run_mode: "extract_link", label: copy.runModeLabels.extract_link, price: 5, enabled: true },
@@ -2328,12 +2351,39 @@ export function ExchangeStudio() {
 
       <article className="panel p-5 md:p-6">
         <div className="grid gap-4">
+          <div className="grid gap-3 xl:grid-cols-[11.25rem_minmax(0,1fr)] xl:items-start">
+            <div className="grid auto-rows-max content-start gap-2 sm:grid-cols-2 xl:grid-cols-2">
+              {overviewItems.map((item) => (
+                <article
+                  key={item.label}
+                  className="surface-card aspect-square rounded-[0.95rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,252,246,0.74)] p-2.25"
+                >
+                  <div className="flex h-full flex-col justify-between">
+                    <div className="text-xs font-semibold tracking-[0.03em] text-[var(--muted)]">
+                      {item.label}
+                    </div>
+                    <div className="text-[1.55rem] font-semibold leading-none tracking-[-0.06em] text-[var(--accent-deep)] sm:text-[1.7rem]">
+                      {typeof item.value === "number" ? item.value : "—"}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <OverviewActivityCard
+              snapshot={overviewSnapshot}
+              rows={4}
+              compact
+              className="min-h-[10.5rem] xl:h-[11.25rem]"
+            />
+          </div>
+
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="section-kicker">{copy.taskKicker}</p>
               <h2 className="section-title">{copy.taskStatusTitle}</h2>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 md:mt-2">
               <button
                 type="button"
                 onClick={buildBatchRetryConfirmation}

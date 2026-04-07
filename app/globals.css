@@ -96,6 +96,7 @@
 }
 
 html[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #0f1418;
   --ink: #f2ece2;
   --muted: #9ba89f;
@@ -164,30 +165,30 @@ html[data-theme="dark"] {
   --status-pill-bg: rgba(123, 194, 195, 0.14);
   --status-pill-text: var(--teal);
   --activity-empty: rgba(242, 236, 226, 0.08);
-  --activity-success-1: rgba(123, 194, 195, 0.22);
-  --activity-success-2: rgba(123, 194, 195, 0.38);
-  --activity-success-3: rgba(123, 194, 195, 0.58);
-  --activity-success-4: #7bc2c3;
-  --activity-failure-1: rgba(210, 102, 87, 0.22);
-  --activity-failure-2: rgba(210, 102, 87, 0.38);
-  --activity-failure-3: rgba(210, 102, 87, 0.56);
-  --activity-failure-4: #ff8d77;
+  --activity-success-1: rgba(74, 222, 128, 0.24);
+  --activity-success-2: rgba(74, 222, 128, 0.42);
+  --activity-success-3: rgba(74, 222, 128, 0.68);
+  --activity-success-4: #4ade80;
+  --activity-failure-1: rgba(255, 107, 107, 0.24);
+  --activity-failure-2: rgba(255, 107, 107, 0.42);
+  --activity-failure-3: rgba(255, 107, 107, 0.68);
+  --activity-failure-4: #ff6b6b;
   --activity-mixed-1: rgba(213, 138, 87, 0.2);
   --activity-mixed-2: rgba(213, 138, 87, 0.36);
   --activity-mixed-3: rgba(213, 138, 87, 0.56);
   --activity-mixed-4: #d58a57;
-  --activity-queued-1: rgba(232, 191, 84, 0.22);
-  --activity-queued-2: rgba(232, 191, 84, 0.38);
-  --activity-queued-3: rgba(232, 191, 84, 0.58);
-  --activity-queued-4: #e8bf54;
-  --activity-pending-1: rgba(124, 152, 201, 0.2);
-  --activity-pending-2: rgba(124, 152, 201, 0.36);
-  --activity-pending-3: rgba(124, 152, 201, 0.54);
-  --activity-pending-4: #8ca9d8;
-  --activity-running-1: rgba(124, 152, 201, 0.2);
-  --activity-running-2: rgba(124, 152, 201, 0.36);
-  --activity-running-3: rgba(124, 152, 201, 0.54);
-  --activity-running-4: #8ca9d8;
+  --activity-queued-1: rgba(255, 196, 61, 0.24);
+  --activity-queued-2: rgba(255, 196, 61, 0.42);
+  --activity-queued-3: rgba(255, 196, 61, 0.68);
+  --activity-queued-4: #ffc43d;
+  --activity-pending-1: rgba(96, 165, 250, 0.22);
+  --activity-pending-2: rgba(96, 165, 250, 0.4);
+  --activity-pending-3: rgba(96, 165, 250, 0.64);
+  --activity-pending-4: #60a5fa;
+  --activity-running-1: rgba(96, 165, 250, 0.22);
+  --activity-running-2: rgba(96, 165, 250, 0.4);
+  --activity-running-3: rgba(96, 165, 250, 0.64);
+  --activity-running-4: #60a5fa;
 }
 
 * {
@@ -343,7 +344,7 @@ textarea {
 .control-dropdown {
   position: relative;
   z-index: 41;
-  min-width: 10.5rem;
+  width: 8.8rem;
 }
 
 .control-dropdown-trigger {
@@ -404,18 +405,19 @@ textarea {
 
 .control-dropdown-panel {
   position: absolute;
-  right: 0;
+  left: 50%;
   top: calc(100% + 0.65rem);
   z-index: 50;
   display: grid;
   width: 100%;
-  gap: 0.35rem;
+  transform: translateX(-50%);
+  gap: 0.3rem;
   border: 1px solid var(--surface-border-strong);
   border-radius: 1.35rem;
   background: var(--panel-bg);
   box-shadow: var(--panel-shadow);
   backdrop-filter: blur(18px);
-  padding: 0.5rem;
+  padding: 0.35rem;
 }
 
 .control-dropdown-option {
@@ -423,23 +425,27 @@ textarea {
   width: 100%;
   align-items: center;
   gap: 0.7rem;
-  border: 0;
-  border-radius: 1rem;
-  background: transparent;
+  min-height: 2.4rem;
+  border: 1px solid var(--control-chip-border);
+  border-radius: 999px;
+  background: var(--control-chip-bg);
   color: var(--ink);
-  padding: 0.72rem 0.85rem;
+  padding: 0.5rem 0.95rem;
   text-align: left;
-  font-size: 1rem;
+  font-size: 0.84rem;
   font-weight: 700;
+  line-height: 1;
   transition:
     background 140ms ease,
     color 140ms ease,
-    transform 140ms ease;
+    transform 140ms ease,
+    border-color 140ms ease;
 }
 
 .control-dropdown-option:hover {
   transform: translateY(-1px);
   background: var(--surface-soft-bg);
+  border-color: var(--field-border-focus);
 }
 
 .control-dropdown-option:focus-visible {
@@ -449,6 +455,7 @@ textarea {
 }
 
 .control-dropdown-option-active {
+  border-color: transparent;
   background: var(--control-chip-active-bg);
   color: var(--control-chip-active-text);
 }

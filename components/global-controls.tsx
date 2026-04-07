@@ -38,6 +38,12 @@ export function GlobalControls() {
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const languageMenuRef = useRef<HTMLDivElement | null>(null);
   const copy = language === "zh" ? COPY.zh : language === "vi" ? COPY.vi : COPY.en;
+  const themeOptions = [
+    ["light", copy.light],
+    ["dark", copy.dark],
+    ["system", copy.system],
+  ] as const;
+  const activeThemeIndex = themeOptions.findIndex(([value]) => value === themePreference);
   const currentLanguageLabel = useMemo(
     () => SUPPORTED_LANGUAGES.find((option) => option.value === language)?.label || language,
     [language]
@@ -72,23 +78,31 @@ export function GlobalControls() {
     <div className="control-bar">
       <div className="control-group">
         <span className="control-label">{copy.theme}</span>
-        {([
-          ["light", copy.light],
-          ["dark", copy.dark],
-          ["system", copy.system],
-        ] as const).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setThemePreference(value)}
-            className={classNames(
-              "control-chip",
-              themePreference === value && "control-chip-active"
-            )}
-          >
-            {label}
-          </button>
-        ))}
+        <div className="surface-card relative grid h-[2.4rem] min-w-[16.75rem] grid-cols-3 rounded-full border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.74)] p-[2px]">
+          <span
+            aria-hidden="true"
+            className="segmented-control-indicator pointer-events-none absolute bottom-[2px] left-[2px] top-[2px] rounded-full transition-transform duration-300 ease-out"
+            style={{
+              width: "calc((100% - 4px) / 3)",
+              transform: `translateX(${Math.max(0, activeThemeIndex) * 100}%)`,
+            }}
+          />
+          {themeOptions.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setThemePreference(value)}
+              className={classNames(
+                "relative z-10 h-full rounded-full px-3 text-[0.84rem] font-semibold leading-none transition-colors duration-300",
+                themePreference === value
+                  ? "segmented-control-button-active"
+                  : "text-[var(--muted)] hover:text-[var(--ink)]"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="control-group">

@@ -19,7 +19,7 @@ export default function RootLayout({
       try {
         var themeKey = "pixel-websale-theme";
         var languageKey = "pixel-websale-language";
-        var themePreference = localStorage.getItem(themeKey) || "system";
+        var themePreference = localStorage.getItem(themeKey) || "dark";
         var storedLanguage = localStorage.getItem(languageKey);
         var preferredLanguage = storedLanguage || navigator.language.toLowerCase();
         var language = preferredLanguage.indexOf("zh") === 0
@@ -35,8 +35,8 @@ export default function RootLayout({
         document.documentElement.dataset.themePreference = themePreference;
         document.documentElement.lang = language === "zh" ? "zh-CN" : language === "vi" ? "vi" : "en";
       } catch (error) {
-        document.documentElement.dataset.theme = "light";
-        document.documentElement.dataset.themePreference = "system";
+        document.documentElement.dataset.theme = "dark";
+        document.documentElement.dataset.themePreference = "dark";
         document.documentElement.lang = "zh-CN";
       }
     })();
@@ -45,8 +45,8 @@ export default function RootLayout({
   return (
     <html
       lang="zh-CN"
-      data-theme="light"
-      data-theme-preference="system"
+      data-theme="dark"
+      data-theme-preference="dark"
       suppressHydrationWarning
     >
       <body suppressHydrationWarning>
