@@ -518,19 +518,6 @@ function resolveActivitySequenceTimestamp(task: QueueTask) {
 }
 
 function compareActivitySequence(a: QueueTask, b: QueueTask) {
-  const left = resolveActivitySequenceTimestamp(a);
-  const right = resolveActivitySequenceTimestamp(b);
-
-  if (left !== null && right !== null && left !== right) {
-    return left - right;
-  }
-  if (left !== null && right === null) {
-    return -1;
-  }
-  if (left === null && right !== null) {
-    return 1;
-  }
-
   return a.id - b.id;
 }
 
