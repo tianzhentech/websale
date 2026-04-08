@@ -201,7 +201,7 @@ const CDK_STORAGE_KEY = "pixel-websale-cdk-code";
 const ENQUEUE_HISTORY_STORAGE_KEY = "pixel-websale-enqueue-history";
 const MAX_ENQUEUE_HISTORY_RECORDS = 48;
 const BULK_TEXT_PLACEHOLDER = "demo.user@example.com---Passw0rd!---JBSWY3DPEHPK3PXP";
-const TASK_LIST_PAGE_SIZE = 10;
+const TASK_LIST_PAGE_SIZE = 5;
 const transactionGridTemplate =
   "minmax(10rem,1.7fr) minmax(8rem,1.1fr) minmax(4.5rem,0.7fr) minmax(5.5rem,0.9fr) minmax(4.5rem,0.8fr) minmax(4.5rem,0.8fr) minmax(16rem,4fr)";
 
