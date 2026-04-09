@@ -5,6 +5,10 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, useTransition }
 
 import { useUiPreferences } from "@/components/ui-preferences-provider";
 import { renderMarkdownToHtml } from "@/lib/markdown";
+import {
+  NOTICE_TRANSLATION_CONTENT_TOKEN,
+  NOTICE_TRANSLATION_TARGET_LANGUAGE_TOKEN,
+} from "@/lib/notice-translation-prompts";
 
 type AdminMarkdownEditorProps = {
   initialAuthenticated: boolean;
@@ -31,9 +35,15 @@ type AdminConfigResponse = {
   extract_link_enabled?: boolean;
   subscription_enabled?: boolean;
   overview_activity_window_minutes?: number;
+  notice_translation_system_prompt?: string;
+  notice_translation_system_prompt_override?: string | null;
+  notice_translation_user_prompt_template?: string;
+  notice_translation_user_prompt_template_override?: string | null;
   default_backend_api_base_url?: string;
   default_backend_api_password?: string;
   default_overview_activity_window_minutes?: number;
+  default_notice_translation_system_prompt?: string;
+  default_notice_translation_user_prompt_template?: string;
   detail?: string;
 };
 
@@ -81,6 +91,12 @@ export function AdminMarkdownEditor({
   const [subscriptionEnabled, setSubscriptionEnabled] = useState(true);
   const [overviewActivityWindowMinutes, setOverviewActivityWindowMinutes] = useState("");
   const [defaultOverviewActivityWindowMinutes, setDefaultOverviewActivityWindowMinutes] = useState("");
+  const [noticeTranslationSystemPrompt, setNoticeTranslationSystemPrompt] = useState("");
+  const [noticeTranslationUserPromptTemplate, setNoticeTranslationUserPromptTemplate] = useState("");
+  const [defaultNoticeTranslationSystemPrompt, setDefaultNoticeTranslationSystemPrompt] =
+    useState("");
+  const [defaultNoticeTranslationUserPromptTemplate, setDefaultNoticeTranslationUserPromptTemplate] =
+    useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
@@ -102,6 +118,9 @@ export function AdminMarkdownEditor({
           modeSaved: "业务模式开关已更新。",
           overviewSaveFailed: "热力图时间窗口保存失败。",
           overviewSaved: "热力图时间窗口已更新。",
+          translationPromptSaveFailed: "公告翻译 Prompt 保存失败。",
+          translationPromptSaved: "公告翻译 Prompt 已更新，并已重新触发多语言翻译。",
+          translationPromptResetDone: "公告翻译 Prompt 已恢复默认，并已重新触发多语言翻译。",
           admin: "Admin",
           title: "管理后台",
           introPrefix: "此页面仅供已授权管理员访问。",
@@ -157,6 +176,16 @@ export function AdminMarkdownEditor({
           overviewCurrentLabel: "当前窗口",
           overviewDefaultLabel: "默认窗口",
           overviewSave: "保存窗口",
+          translationPromptKicker: "Translation",
+          translationPromptTitle: "公告翻译 Prompt",
+          translationPromptDescription: "这里控制公告多语言翻译时发送给模型的提示词。保存后，系统会按新的 Prompt 重新后台生成英文和越南语副本。",
+          translationPromptSystemLabel: "System Prompt",
+          translationPromptUserLabel: "User Prompt 模板",
+          translationPromptSystemPlaceholder: "输入翻译 system prompt",
+          translationPromptUserPlaceholder: "输入带占位符的 user prompt 模板",
+          translationPromptTokensLabel: "必须保留的占位符",
+          translationPromptReset: "恢复默认",
+          translationPromptSave: "保存 Prompt",
         }
       : {
           loginFailed: "Login failed.",
@@ -172,6 +201,9 @@ export function AdminMarkdownEditor({
           modeSaved: "Run mode switches updated.",
           overviewSaveFailed: "Failed to save the heatmap activity window.",
           overviewSaved: "Heatmap activity window updated.",
+          translationPromptSaveFailed: "Failed to save the notice translation prompt.",
+          translationPromptSaved: "Notice translation prompt updated. Background translations were requeued.",
+          translationPromptResetDone: "Notice translation prompt reverted to default and background translations were requeued.",
           admin: "Admin",
           title: "Admin Console",
           introPrefix: "This page is restricted to authorized administrators only.",
@@ -227,6 +259,16 @@ export function AdminMarkdownEditor({
           overviewCurrentLabel: "Active window",
           overviewDefaultLabel: "Default window",
           overviewSave: "Save Window",
+          translationPromptKicker: "Translation",
+          translationPromptTitle: "Notice Translation Prompt",
+          translationPromptDescription: "Control the prompt sent to the model when the notice is translated into other languages. Saving here requeues the English and Vietnamese copies with the new prompt.",
+          translationPromptSystemLabel: "System Prompt",
+          translationPromptUserLabel: "User Prompt Template",
+          translationPromptSystemPlaceholder: "Enter the translation system prompt",
+          translationPromptUserPlaceholder: "Enter the user prompt template with placeholders",
+          translationPromptTokensLabel: "Required placeholders",
+          translationPromptReset: "Use Default",
+          translationPromptSave: "Save Prompt",
         };
   const deferredMarkdown = useDeferredValue(markdown);
   const previewHtml = useMemo(
@@ -275,6 +317,16 @@ export function AdminMarkdownEditor({
       Number.isFinite(payload.overview_activity_window_minutes)
         ? String(payload.overview_activity_window_minutes)
         : nextDefaultOverviewWindow;
+    const nextDefaultSystemPrompt = payload.default_notice_translation_system_prompt || "";
+    const nextDefaultUserPromptTemplate = payload.default_notice_translation_user_prompt_template || "";
+    setNoticeTranslationSystemPrompt(
+      payload.notice_translation_system_prompt || nextDefaultSystemPrompt
+    );
+    setNoticeTranslationUserPromptTemplate(
+      payload.notice_translation_user_prompt_template || nextDefaultUserPromptTemplate
+    );
+    setDefaultNoticeTranslationSystemPrompt(nextDefaultSystemPrompt);
+    setDefaultNoticeTranslationUserPromptTemplate(nextDefaultUserPromptTemplate);
     setDefaultOverviewActivityWindowMinutes(nextDefaultOverviewWindow);
     setOverviewActivityWindowMinutes(nextOverviewWindow);
   };
@@ -306,6 +358,10 @@ export function AdminMarkdownEditor({
       setSubscriptionEnabled(true);
       setOverviewActivityWindowMinutes("");
       setDefaultOverviewActivityWindowMinutes("");
+      setNoticeTranslationSystemPrompt("");
+      setNoticeTranslationUserPromptTemplate("");
+      setDefaultNoticeTranslationSystemPrompt("");
+      setDefaultNoticeTranslationUserPromptTemplate("");
       return;
     }
 
@@ -502,6 +558,72 @@ export function AdminMarkdownEditor({
     persistRunModeConfig(nextExtractLinkEnabled, nextSubscriptionEnabled);
   };
 
+  const handleSaveTranslationPromptConfig = () => {
+    startTransition(async () => {
+      try {
+        setError(null);
+        setStatus(null);
+
+        const response = await fetch("/api/admin/config", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "x-ui-language": language,
+          },
+          body: JSON.stringify({
+            notice_translation_system_prompt: noticeTranslationSystemPrompt,
+            notice_translation_user_prompt_template: noticeTranslationUserPromptTemplate,
+          }),
+        });
+
+        const payload = (await response.json().catch(() => ({}))) as AdminConfigResponse;
+        if (!response.ok) {
+          throw new Error(payload.detail || copy.translationPromptSaveFailed);
+        }
+
+        applyAdminConfigPayload(payload);
+        setStatus(copy.translationPromptSaved);
+      } catch (nextError) {
+        setError(
+          nextError instanceof Error ? nextError.message : copy.translationPromptSaveFailed
+        );
+      }
+    });
+  };
+
+  const handleResetTranslationPromptConfig = () => {
+    startTransition(async () => {
+      try {
+        setError(null);
+        setStatus(null);
+
+        const response = await fetch("/api/admin/config", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "x-ui-language": language,
+          },
+          body: JSON.stringify({
+            notice_translation_system_prompt: defaultNoticeTranslationSystemPrompt,
+            notice_translation_user_prompt_template: defaultNoticeTranslationUserPromptTemplate,
+          }),
+        });
+
+        const payload = (await response.json().catch(() => ({}))) as AdminConfigResponse;
+        if (!response.ok) {
+          throw new Error(payload.detail || copy.translationPromptSaveFailed);
+        }
+
+        applyAdminConfigPayload(payload);
+        setStatus(copy.translationPromptResetDone);
+      } catch (nextError) {
+        setError(
+          nextError instanceof Error ? nextError.message : copy.translationPromptSaveFailed
+        );
+      }
+    });
+  };
+
   const handleLogout = () => {
     startTransition(async () => {
       try {
@@ -522,6 +644,10 @@ export function AdminMarkdownEditor({
         setSubscriptionEnabled(true);
         setOverviewActivityWindowMinutes("");
         setDefaultOverviewActivityWindowMinutes("");
+        setNoticeTranslationSystemPrompt("");
+        setNoticeTranslationUserPromptTemplate("");
+        setDefaultNoticeTranslationSystemPrompt("");
+        setDefaultNoticeTranslationUserPromptTemplate("");
         setError(null);
         setStatus(copy.loggedOut);
       }
@@ -895,6 +1021,88 @@ export function AdminMarkdownEditor({
                     <span className="font-mono">
                       {defaultOverviewActivityWindowMinutes || "-"}
                     </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="surface-soft rounded-[1.7rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.58)] p-4">
+              <div className="grid gap-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
+                    {copy.translationPromptKicker}
+                  </div>
+                  <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">
+                    {copy.translationPromptTitle}
+                  </h2>
+                  <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">
+                    {copy.translationPromptDescription}
+                  </p>
+                </div>
+
+                <div className="grid gap-3 xl:grid-cols-2">
+                  <label className="grid gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                      {copy.translationPromptSystemLabel}
+                    </span>
+                    <textarea
+                      value={noticeTranslationSystemPrompt}
+                      onChange={(event) => setNoticeTranslationSystemPrompt(event.target.value)}
+                      spellCheck={false}
+                      placeholder={copy.translationPromptSystemPlaceholder}
+                      className="min-h-[12rem] w-full rounded-[1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 font-mono text-sm leading-7 outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+                    />
+                  </label>
+
+                  <label className="grid gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                      {copy.translationPromptUserLabel}
+                    </span>
+                    <textarea
+                      value={noticeTranslationUserPromptTemplate}
+                      onChange={(event) =>
+                        setNoticeTranslationUserPromptTemplate(event.target.value)
+                      }
+                      spellCheck={false}
+                      placeholder={copy.translationPromptUserPlaceholder}
+                      className="min-h-[12rem] w-full rounded-[1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 font-mono text-sm leading-7 outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                  <div className="text-sm leading-7 text-[var(--muted)]">
+                    <span className="font-semibold text-[var(--ink)]">
+                      {copy.translationPromptTokensLabel}:
+                    </span>{" "}
+                    <span className="font-mono text-[var(--teal)]">
+                      {NOTICE_TRANSLATION_TARGET_LANGUAGE_TOKEN}
+                    </span>{" "}
+                    <span className="font-mono text-[var(--teal)]">
+                      {NOTICE_TRANSLATION_CONTENT_TOKEN}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 lg:self-start">
+                    <button
+                      type="button"
+                      onClick={handleSaveTranslationPromptConfig}
+                      disabled={isPending}
+                      className={classNames("", isPending ? "theme-button-disabled" : "theme-button-primary")}
+                    >
+                      {isPending ? copy.saving : copy.translationPromptSave}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetTranslationPromptConfig}
+                      disabled={isPending}
+                      className={classNames(
+                        "theme-button-secondary",
+                        isPending && "theme-button-disabled"
+                      )}
+                    >
+                      {copy.translationPromptReset}
+                    </button>
                   </div>
                 </div>
               </div>

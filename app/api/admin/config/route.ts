@@ -10,7 +10,15 @@ import {
 import {
   ADMIN_NOTICE_COOKIE_NAME,
   isAdminNoticeSessionValid,
+  readNoticeMarkdown,
 } from "@/lib/notice-board";
+import {
+  DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
+  DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE,
+  normalizeNoticeTranslationSystemPrompt,
+  normalizeNoticeTranslationUserPromptTemplate,
+} from "@/lib/notice-translation-prompts";
+import { queueNoticeTranslationCopies } from "@/lib/notice-translation";
 import { readServerEnv } from "@/lib/server-env";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +35,8 @@ type AdminConfigPayload = {
   extract_link_enabled?: boolean;
   subscription_enabled?: boolean;
   overview_activity_window_minutes?: number | string | null;
+  notice_translation_system_prompt?: string | null;
+  notice_translation_user_prompt_template?: string | null;
 };
 
 function resolveRouteLanguage(request: NextRequest) {
@@ -61,9 +71,19 @@ async function buildResponsePayload() {
     extract_link_enabled: config.extract_link_enabled,
     subscription_enabled: config.subscription_enabled,
     overview_activity_window_minutes: config.overview_activity_window_minutes,
+    notice_translation_system_prompt:
+      config.notice_translation_system_prompt || DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
+    notice_translation_system_prompt_override: config.notice_translation_system_prompt,
+    notice_translation_user_prompt_template:
+      config.notice_translation_user_prompt_template || DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE,
+    notice_translation_user_prompt_template_override:
+      config.notice_translation_user_prompt_template,
     default_backend_api_base_url: defaultBackendApiBaseUrl,
     default_backend_api_password: defaultBackendApiPassword,
     default_overview_activity_window_minutes: DEFAULT_OVERVIEW_ACTIVITY_WINDOW_MINUTES,
+    default_notice_translation_system_prompt: DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
+    default_notice_translation_user_prompt_template:
+      DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE,
     updated_at: config.updated_at,
   };
 }
@@ -109,6 +129,14 @@ export async function PUT(request: NextRequest) {
       payload?.overview_activity_window_minutes === undefined
         ? undefined
         : normalizeOverviewActivityWindowMinutes(payload.overview_activity_window_minutes);
+    const normalizedRequestedSystemPrompt =
+      payload?.notice_translation_system_prompt === undefined
+        ? undefined
+        : normalizeNoticeTranslationSystemPrompt(payload.notice_translation_system_prompt);
+    const normalizedRequestedUserPromptTemplate =
+      payload?.notice_translation_user_prompt_template === undefined
+        ? undefined
+        : normalizeNoticeTranslationUserPromptTemplate(payload.notice_translation_user_prompt_template);
 
     await writeAdminRuntimeConfig({
       backend_api_base_url:
@@ -122,7 +150,22 @@ export async function PUT(request: NextRequest) {
       extract_link_enabled: extractLinkEnabled,
       subscription_enabled: subscriptionEnabled,
       overview_activity_window_minutes: overviewActivityWindowMinutes,
+      notice_translation_system_prompt:
+        normalizedRequestedSystemPrompt === DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT
+          ? null
+          : normalizedRequestedSystemPrompt,
+      notice_translation_user_prompt_template:
+        normalizedRequestedUserPromptTemplate === DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE
+          ? null
+          : normalizedRequestedUserPromptTemplate,
     });
+
+    if (
+      payload?.notice_translation_system_prompt !== undefined ||
+      payload?.notice_translation_user_prompt_template !== undefined
+    ) {
+      await queueNoticeTranslationCopies(await readNoticeMarkdown());
+    }
 
     return NextResponse.json(await buildResponsePayload());
   } catch (error) {

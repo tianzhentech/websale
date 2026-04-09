@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { readAdminRuntimeConfig } from "@/lib/admin-config";
 import type { Language } from "@/lib/ui-language";
 import {
   NOTICE_SOURCE_LANGUAGE,
@@ -15,6 +16,12 @@ import {
   type NoticeLanguage,
   type NoticeTranslationLanguage,
 } from "@/lib/notice-board";
+import {
+  DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
+  DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE,
+  fillNoticeTranslationUserPromptTemplate,
+  resolveNoticeTranslationPrompts,
+} from "@/lib/notice-translation-prompts";
 
 type NoticePreparedContentStatus = "ready" | "pending" | "failed";
 
@@ -26,9 +33,16 @@ type NoticeTranslationManifestRecord = {
 };
 
 type NoticeTranslationManifest = {
+  promptDigest: string;
   sourceDigest: string;
   sourceUpdatedAt: string;
   translations: Record<NoticeTranslationLanguage, NoticeTranslationManifestRecord>;
+};
+
+type ActiveNoticeTranslationPrompts = {
+  promptDigest: string;
+  systemPrompt: string;
+  userPromptTemplate: string;
 };
 
 const TRANSLATION_API_BASE_URL_ENV = "PIXEL_WEBSALE_TRANSLATION_API_BASE_URL";
@@ -44,11 +58,25 @@ const NOTICE_TRANSLATION_MANIFEST_FILE = path.join(
 
 const translationCache = new Map<string, string>();
 let translationQueue = Promise.resolve();
-const queuedSourceDigests = new Set<string>();
+const queuedTranslationKeys = new Set<string>();
 
-function buildTranslationCacheKey(markdown: string, targetLanguage: NoticeTranslationLanguage) {
+function buildNoticeTranslationPromptDigest(systemPrompt: string, userPromptTemplate: string) {
   return createHash("sha256")
-    .update(`${targetLanguage}\n${normalizeNoticeMarkdown(markdown)}`)
+    .update(`${systemPrompt}\n---\n${userPromptTemplate}`)
+    .digest("hex");
+}
+
+function buildTranslationQueueKey(sourceDigest: string, promptDigest: string) {
+  return `${sourceDigest}:${promptDigest}`;
+}
+
+function buildTranslationCacheKey(
+  markdown: string,
+  targetLanguage: NoticeTranslationLanguage,
+  promptDigest: string
+) {
+  return createHash("sha256")
+    .update(`${targetLanguage}\n${promptDigest}\n${normalizeNoticeMarkdown(markdown)}`)
     .digest("hex");
 }
 
@@ -61,6 +89,21 @@ function resolveTranslationTargetLabel(language: NoticeTranslationLanguage) {
     return "Vietnamese";
   }
   return "English";
+}
+
+async function resolveActiveNoticeTranslationPrompts(): Promise<ActiveNoticeTranslationPrompts> {
+  const config = await readAdminRuntimeConfig();
+  const prompts = resolveNoticeTranslationPrompts(config);
+
+  return {
+    systemPrompt: prompts.systemPrompt || DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
+    userPromptTemplate:
+      prompts.userPromptTemplate || DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE,
+    promptDigest: buildNoticeTranslationPromptDigest(
+      prompts.systemPrompt || DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
+      prompts.userPromptTemplate || DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE
+    ),
+  };
 }
 
 function resolveTranslationConfig() {
@@ -81,18 +124,25 @@ function resolveTranslationConfig() {
   };
 }
 
-function buildTranslationMessages(markdown: string, targetLanguage: NoticeTranslationLanguage) {
+function buildTranslationMessages(
+  markdown: string,
+  targetLanguage: NoticeTranslationLanguage,
+  prompts: Pick<ActiveNoticeTranslationPrompts, "systemPrompt" | "userPromptTemplate">
+) {
   const targetLabel = resolveTranslationTargetLabel(targetLanguage);
 
   return [
     {
       role: "system",
-      content:
-        "You are a translation engine for a Next.js app. Translate mixed Markdown and raw HTML faithfully. Preserve Markdown structure, headings, emphasis, lists, blockquotes, links, inline code, fenced code blocks, emojis, spacing, and line breaks. Preserve all HTML tags, attributes, class names, ids, inline styles, URLs, and nesting exactly as provided. Only translate user-visible natural-language text, including text nodes inside HTML elements. Do not translate code, URLs, email addresses, attribute names, CSS classes, ids, or inline JavaScript. Return translated content only, without code fences or explanations.",
+      content: prompts.systemPrompt,
     },
     {
       role: "user",
-      content: `Translate the following Markdown/HTML content into ${targetLabel}. Keep both the Markdown structure and the HTML structure unchanged. If raw HTML is present, preserve every tag and attribute exactly and translate only the visible text content.\n\n${markdown}`,
+      content: fillNoticeTranslationUserPromptTemplate(
+        prompts.userPromptTemplate,
+        targetLabel,
+        markdown
+      ),
     },
   ];
 }
@@ -141,6 +191,7 @@ function createManifestRecord(
 
 function createTranslationManifest(
   sourceMarkdown: string,
+  promptDigest: string,
   status: NoticePreparedContentStatus = "pending"
 ): NoticeTranslationManifest {
   const normalizedSource = normalizeNoticeMarkdown(sourceMarkdown);
@@ -148,6 +199,7 @@ function createTranslationManifest(
   const sourceUpdatedAt = new Date().toISOString();
 
   return {
+    promptDigest,
     sourceDigest,
     sourceUpdatedAt,
     translations: Object.fromEntries(
@@ -177,8 +229,8 @@ async function writeTranslationManifest(manifest: NoticeTranslationManifest) {
   );
 }
 
-async function buildInitialTranslationManifest(sourceMarkdown: string) {
-  const manifest = createTranslationManifest(sourceMarkdown, "pending");
+async function buildInitialTranslationManifest(sourceMarkdown: string, promptDigest: string) {
+  const manifest = createTranslationManifest(sourceMarkdown, promptDigest, "pending");
   const sourceDigest = manifest.sourceDigest;
   const readyAt = new Date().toISOString();
 
@@ -188,7 +240,7 @@ async function buildInitialTranslationManifest(sourceMarkdown: string) {
       if (normalizeNoticeMarkdown(translatedMarkdown)) {
         manifest.translations[language] = createManifestRecord(sourceDigest, "ready", readyAt, null);
         translationCache.set(
-          buildTranslationCacheKey(sourceMarkdown, language),
+          buildTranslationCacheKey(sourceMarkdown, language, promptDigest),
           translatedMarkdown
         );
       }
@@ -200,34 +252,39 @@ async function buildInitialTranslationManifest(sourceMarkdown: string) {
   return manifest;
 }
 
-async function ensureTranslationManifest(sourceMarkdown: string) {
+async function ensureTranslationManifest(sourceMarkdown: string, promptDigest: string) {
   const normalizedSource = normalizeNoticeMarkdown(sourceMarkdown);
   const sourceDigest = buildNoticeMarkdownDigest(normalizedSource);
   const existing = await readTranslationManifestFile();
 
   if (!existing) {
-    const nextManifest = await buildInitialTranslationManifest(sourceMarkdown);
+    const nextManifest = await buildInitialTranslationManifest(sourceMarkdown, promptDigest);
     await writeTranslationManifest(nextManifest);
     return nextManifest;
   }
 
-  if (existing.sourceDigest === sourceDigest) {
+  if (existing.sourceDigest === sourceDigest && existing.promptDigest === promptDigest) {
     return existing;
   }
 
-  const nextManifest = createTranslationManifest(sourceMarkdown, "pending");
+  const nextManifest = createTranslationManifest(sourceMarkdown, promptDigest, "pending");
   await writeTranslationManifest(nextManifest);
   return nextManifest;
 }
 
 async function updateTranslationManifestRecord(
   sourceDigest: string,
+  promptDigest: string,
   language: NoticeTranslationLanguage,
   status: NoticePreparedContentStatus,
   error: string | null = null
 ) {
   const manifest = await readTranslationManifestFile();
-  if (!manifest || manifest.sourceDigest !== sourceDigest) {
+  if (
+    !manifest ||
+    manifest.sourceDigest !== sourceDigest ||
+    manifest.promptDigest !== promptDigest
+  ) {
     return false;
   }
 
@@ -241,34 +298,39 @@ async function updateTranslationManifestRecord(
   return true;
 }
 
-async function isSourceDigestCurrent(sourceDigest: string) {
+async function isTranslationStateCurrent(sourceDigest: string, promptDigest: string) {
   const manifest = await readTranslationManifestFile();
-  return manifest?.sourceDigest === sourceDigest;
+  return (
+    manifest?.sourceDigest === sourceDigest && manifest?.promptDigest === promptDigest
+  );
 }
 
 export function getCachedNoticeTranslation(
   markdown: string,
-  targetLanguage: NoticeTranslationLanguage
+  targetLanguage: NoticeTranslationLanguage,
+  promptDigest: string
 ) {
-  return translationCache.get(buildTranslationCacheKey(markdown, targetLanguage)) || null;
+  return translationCache.get(buildTranslationCacheKey(markdown, targetLanguage, promptDigest)) || null;
 }
 
 export function cacheNoticeTranslation(
   markdown: string,
   targetLanguage: NoticeTranslationLanguage,
-  translatedMarkdown: string
+  translatedMarkdown: string,
+  promptDigest: string
 ) {
   translationCache.set(
-    buildTranslationCacheKey(markdown, targetLanguage),
+    buildTranslationCacheKey(markdown, targetLanguage, promptDigest),
     translatedMarkdown
   );
 }
 
 async function translateNoticeMarkdown(
   markdown: string,
-  targetLanguage: NoticeTranslationLanguage
+  targetLanguage: NoticeTranslationLanguage,
+  prompts: ActiveNoticeTranslationPrompts
 ) {
-  const cached = getCachedNoticeTranslation(markdown, targetLanguage);
+  const cached = getCachedNoticeTranslation(markdown, targetLanguage, prompts.promptDigest);
   if (cached !== null) {
     return cached;
   }
@@ -284,7 +346,7 @@ async function translateNoticeMarkdown(
       model,
       temperature: 0.2,
       stream: false,
-      messages: buildTranslationMessages(markdown, targetLanguage),
+      messages: buildTranslationMessages(markdown, targetLanguage, prompts),
     }),
     cache: "no-store",
   });
@@ -300,51 +362,57 @@ async function translateNoticeMarkdown(
   }
 
   const persistedTranslation = `${translatedMarkdown}\n`;
-  cacheNoticeTranslation(markdown, targetLanguage, persistedTranslation);
+  cacheNoticeTranslation(markdown, targetLanguage, persistedTranslation, prompts.promptDigest);
   return persistedTranslation;
 }
 
-async function runQueuedTranslationCopies(sourceMarkdown: string) {
+async function runQueuedTranslationCopies(
+  sourceMarkdown: string,
+  prompts: ActiveNoticeTranslationPrompts
+) {
   const sourceDigest = buildNoticeMarkdownDigest(sourceMarkdown);
+  const promptDigest = prompts.promptDigest;
 
   for (const language of NOTICE_TRANSLATION_LANGUAGES) {
-    if (!(await isSourceDigestCurrent(sourceDigest))) {
+    if (!(await isTranslationStateCurrent(sourceDigest, promptDigest))) {
       return;
     }
 
     try {
-      const translatedMarkdown = await translateNoticeMarkdown(sourceMarkdown, language);
-      if (!(await isSourceDigestCurrent(sourceDigest))) {
+      const translatedMarkdown = await translateNoticeMarkdown(sourceMarkdown, language, prompts);
+      if (!(await isTranslationStateCurrent(sourceDigest, promptDigest))) {
         return;
       }
 
       await writeNoticeMarkdown(language, translatedMarkdown);
-      await updateTranslationManifestRecord(sourceDigest, language, "ready", null);
-      cacheNoticeTranslation(sourceMarkdown, language, translatedMarkdown);
+      await updateTranslationManifestRecord(sourceDigest, promptDigest, language, "ready", null);
+      cacheNoticeTranslation(sourceMarkdown, language, translatedMarkdown, promptDigest);
     } catch (error) {
-      if (!(await isSourceDigestCurrent(sourceDigest))) {
+      if (!(await isTranslationStateCurrent(sourceDigest, promptDigest))) {
         return;
       }
 
       const detail = error instanceof Error && error.message ? error.message : "Unexpected translation error.";
-      await updateTranslationManifestRecord(sourceDigest, language, "failed", detail);
+      await updateTranslationManifestRecord(sourceDigest, promptDigest, language, "failed", detail);
     }
   }
 }
 
 export async function queueNoticeTranslationCopies(sourceMarkdown: string) {
-  const manifest = await ensureTranslationManifest(sourceMarkdown);
+  const prompts = await resolveActiveNoticeTranslationPrompts();
+  const manifest = await ensureTranslationManifest(sourceMarkdown, prompts.promptDigest);
   const normalizedSource = normalizeNoticeMarkdown(sourceMarkdown);
 
   if (!normalizedSource) {
     for (const language of NOTICE_TRANSLATION_LANGUAGES) {
       await writeNoticeMarkdown(language, "");
       manifest.translations[language] = createManifestRecord(manifest.sourceDigest, "ready", new Date().toISOString(), null);
-      cacheNoticeTranslation(sourceMarkdown, language, "");
+      cacheNoticeTranslation(sourceMarkdown, language, "", prompts.promptDigest);
     }
     await writeTranslationManifest(manifest);
     return {
       queued: false,
+      promptDigest: manifest.promptDigest,
       sourceDigest: manifest.sourceDigest,
     };
   }
@@ -356,36 +424,42 @@ export async function queueNoticeTranslationCopies(sourceMarkdown: string) {
   if (!needsWork) {
     return {
       queued: false,
+      promptDigest: manifest.promptDigest,
       sourceDigest: manifest.sourceDigest,
     };
   }
 
-  if (queuedSourceDigests.has(manifest.sourceDigest)) {
+  const queueKey = buildTranslationQueueKey(manifest.sourceDigest, manifest.promptDigest);
+
+  if (queuedTranslationKeys.has(queueKey)) {
     return {
       queued: true,
+      promptDigest: manifest.promptDigest,
       sourceDigest: manifest.sourceDigest,
     };
   }
 
-  queuedSourceDigests.add(manifest.sourceDigest);
+  queuedTranslationKeys.add(queueKey);
   translationQueue = translationQueue
     .catch(() => undefined)
     .then(async () => {
       try {
-        await runQueuedTranslationCopies(sourceMarkdown);
+        await runQueuedTranslationCopies(sourceMarkdown, prompts);
       } finally {
-        queuedSourceDigests.delete(manifest.sourceDigest);
+        queuedTranslationKeys.delete(queueKey);
       }
     });
 
   return {
     queued: true,
+    promptDigest: manifest.promptDigest,
     sourceDigest: manifest.sourceDigest,
   };
 }
 
 export async function readPreparedNoticeMarkdown(targetLanguage: Language) {
   const sourceMarkdown = await readNoticeMarkdown(NOTICE_SOURCE_LANGUAGE);
+  const prompts = await resolveActiveNoticeTranslationPrompts();
 
   if (targetLanguage === NOTICE_SOURCE_LANGUAGE) {
     return {
@@ -396,12 +470,12 @@ export async function readPreparedNoticeMarkdown(targetLanguage: Language) {
   }
 
   const translationLanguage = targetLanguage as NoticeTranslationLanguage;
-  const manifest = await ensureTranslationManifest(sourceMarkdown);
+  const manifest = await ensureTranslationManifest(sourceMarkdown, prompts.promptDigest);
   const translationState = manifest.translations[translationLanguage];
 
   if (translationState?.status === "ready" && translationState.sourceDigest === manifest.sourceDigest) {
     const translatedMarkdown = await readNoticeMarkdown(translationLanguage);
-    cacheNoticeTranslation(sourceMarkdown, translationLanguage, translatedMarkdown);
+    cacheNoticeTranslation(sourceMarkdown, translationLanguage, translatedMarkdown, prompts.promptDigest);
     return {
       contentLanguage: translationLanguage as NoticeLanguage,
       markdown: translatedMarkdown,

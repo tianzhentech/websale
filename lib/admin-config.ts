@@ -3,12 +3,19 @@ import "server-only";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  normalizeNoticeTranslationSystemPrompt,
+  normalizeNoticeTranslationUserPromptTemplate,
+} from "@/lib/notice-translation-prompts";
+
 export type AdminRuntimeConfig = {
   backend_api_base_url: string | null;
   backend_api_password: string | null;
   extract_link_enabled: boolean;
   subscription_enabled: boolean;
   overview_activity_window_minutes: number;
+  notice_translation_system_prompt: string | null;
+  notice_translation_user_prompt_template: string | null;
   updated_at: string | null;
 };
 
@@ -24,6 +31,8 @@ const DEFAULT_ADMIN_RUNTIME_CONFIG: AdminRuntimeConfig = {
   extract_link_enabled: true,
   subscription_enabled: true,
   overview_activity_window_minutes: DEFAULT_OVERVIEW_ACTIVITY_WINDOW_MINUTES,
+  notice_translation_system_prompt: null,
+  notice_translation_user_prompt_template: null,
   updated_at: null,
 };
 
@@ -87,6 +96,18 @@ function normalizeStoredOverviewActivityWindowMinutes(value: unknown) {
   }
 }
 
+function normalizeStoredNoticeTranslationSystemPrompt(value: unknown) {
+  return normalizeNoticeTranslationSystemPrompt(value);
+}
+
+function normalizeStoredNoticeTranslationUserPromptTemplate(value: unknown) {
+  try {
+    return normalizeNoticeTranslationUserPromptTemplate(value);
+  } catch {
+    return DEFAULT_ADMIN_RUNTIME_CONFIG.notice_translation_user_prompt_template;
+  }
+}
+
 export async function readAdminRuntimeConfig(): Promise<AdminRuntimeConfig> {
   try {
     const raw = await readFile(ADMIN_CONFIG_FILE, "utf8");
@@ -104,6 +125,12 @@ export async function readAdminRuntimeConfig(): Promise<AdminRuntimeConfig> {
       ),
       overview_activity_window_minutes: normalizeStoredOverviewActivityWindowMinutes(
         parsed.overview_activity_window_minutes
+      ),
+      notice_translation_system_prompt: normalizeStoredNoticeTranslationSystemPrompt(
+        parsed.notice_translation_system_prompt
+      ),
+      notice_translation_user_prompt_template: normalizeStoredNoticeTranslationUserPromptTemplate(
+        parsed.notice_translation_user_prompt_template
       ),
       updated_at:
         typeof parsed.updated_at === "string" && parsed.updated_at.trim()
@@ -124,6 +151,8 @@ export async function writeAdminRuntimeConfig(
       | "extract_link_enabled"
       | "subscription_enabled"
       | "overview_activity_window_minutes"
+      | "notice_translation_system_prompt"
+      | "notice_translation_user_prompt_template"
     >
   >
 ) {
@@ -149,6 +178,16 @@ export async function writeAdminRuntimeConfig(
       nextConfig.overview_activity_window_minutes === undefined
         ? currentConfig.overview_activity_window_minutes
         : normalizeOverviewActivityWindowMinutes(nextConfig.overview_activity_window_minutes),
+    notice_translation_system_prompt:
+      nextConfig.notice_translation_system_prompt === undefined
+        ? currentConfig.notice_translation_system_prompt
+        : normalizeNoticeTranslationSystemPrompt(nextConfig.notice_translation_system_prompt),
+    notice_translation_user_prompt_template:
+      nextConfig.notice_translation_user_prompt_template === undefined
+        ? currentConfig.notice_translation_user_prompt_template
+        : normalizeNoticeTranslationUserPromptTemplate(
+            nextConfig.notice_translation_user_prompt_template
+          ),
     updated_at: new Date().toISOString(),
   };
 
