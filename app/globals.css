@@ -792,6 +792,12 @@ textarea {
 .markdown-prose ol,
 .markdown-prose pre,
 .markdown-prose blockquote,
+.markdown-prose table,
+.markdown-prose > div,
+.markdown-prose > section,
+.markdown-prose > article,
+.markdown-prose > aside,
+.markdown-prose > figure,
 .markdown-prose hr {
   margin: 0.95rem 0 0;
 }
@@ -848,6 +854,35 @@ textarea {
 .markdown-prose hr {
   border: 0;
   border-top: 1px solid var(--markdown-hr);
+}
+
+.markdown-prose img,
+.markdown-prose video,
+.markdown-prose iframe {
+  display: block;
+  max-width: 100%;
+  border: 0;
+  border-radius: 1rem;
+}
+
+.markdown-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid var(--surface-border);
+}
+
+.markdown-prose th,
+.markdown-prose td {
+  border: 1px solid var(--surface-border);
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+}
+
+.markdown-prose th {
+  background: var(--surface-soft-bg);
+  color: var(--ink);
 }
 
 .markdown-prose code {

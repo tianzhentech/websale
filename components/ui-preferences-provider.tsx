@@ -23,6 +23,7 @@ export type { Language } from "@/lib/ui-language";
 
 const THEME_STORAGE_KEY = "pixel-websale-theme";
 const LANGUAGE_STORAGE_KEY = "pixel-websale-language";
+const NOTICE_VISIBLE_STORAGE_KEY = "pixel-websale-notice-visible";
 
 type UiPreferencesContextValue = {
   themePreference: ThemePreference;
@@ -30,6 +31,8 @@ type UiPreferencesContextValue = {
   setThemePreference: (value: ThemePreference) => void;
   language: Language;
   setLanguage: (value: Language) => void;
+  noticeVisible: boolean;
+  setNoticeVisible: (value: boolean) => void;
 };
 
 const UiPreferencesContext = createContext<UiPreferencesContextValue | null>(null);
@@ -63,6 +66,7 @@ export function UiPreferencesProvider({ children }: { children: ReactNode }) {
   const [themePreference, setThemePreference] = useState<ThemePreference>("dark");
   const [resolvedTheme, setResolvedTheme] = useState<ThemeMode>("dark");
   const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE);
+  const [noticeVisible, setNoticeVisible] = useState(true);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -75,6 +79,13 @@ export function UiPreferencesProvider({ children }: { children: ReactNode }) {
     }
 
     setLanguage(resolveLanguage());
+
+    const storedNoticeVisible = window.localStorage.getItem(NOTICE_VISIBLE_STORAGE_KEY);
+    if (storedNoticeVisible === "0" || storedNoticeVisible === "false") {
+      setNoticeVisible(false);
+    } else {
+      setNoticeVisible(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -109,6 +120,10 @@ export function UiPreferencesProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
 
+  useEffect(() => {
+    window.localStorage.setItem(NOTICE_VISIBLE_STORAGE_KEY, noticeVisible ? "1" : "0");
+  }, [noticeVisible]);
+
   const value = useMemo(
     () => ({
       themePreference,
@@ -116,8 +131,10 @@ export function UiPreferencesProvider({ children }: { children: ReactNode }) {
       setThemePreference,
       language,
       setLanguage,
+      noticeVisible,
+      setNoticeVisible,
     }),
-    [language, resolvedTheme, themePreference]
+    [language, noticeVisible, resolvedTheme, themePreference]
   );
 
   return <UiPreferencesContext.Provider value={value}>{children}</UiPreferencesContext.Provider>;

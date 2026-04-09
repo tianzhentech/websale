@@ -7,6 +7,9 @@ import { SUPPORTED_LANGUAGES } from "@/lib/ui-language";
 
 const COPY = {
   zh: {
+    notice: "提示",
+    show: "打开",
+    hide: "关闭",
     theme: "主题",
     language: "语言",
     light: "浅色",
@@ -14,6 +17,9 @@ const COPY = {
     system: "跟随系统",
   },
   en: {
+    notice: "Notice",
+    show: "On",
+    hide: "Off",
     theme: "Theme",
     language: "Language",
     light: "Light",
@@ -21,6 +27,9 @@ const COPY = {
     system: "System",
   },
   vi: {
+    notice: "Notice",
+    show: "On",
+    hide: "Off",
     theme: "Theme",
     language: "Language",
     light: "Light",
@@ -34,10 +43,22 @@ function classNames(...values: Array<string | false | null | undefined>) {
 }
 
 export function GlobalControls() {
-  const { themePreference, setThemePreference, language, setLanguage } = useUiPreferences();
+  const {
+    themePreference,
+    setThemePreference,
+    language,
+    setLanguage,
+    noticeVisible,
+    setNoticeVisible,
+  } = useUiPreferences();
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const languageMenuRef = useRef<HTMLDivElement | null>(null);
   const copy = language === "zh" ? COPY.zh : language === "vi" ? COPY.vi : COPY.en;
+  const noticeOptions = [
+    [true, copy.show],
+    [false, copy.hide],
+  ] as const;
+  const activeNoticeIndex = noticeOptions.findIndex(([value]) => value === noticeVisible);
   const themeOptions = [
     ["light", copy.light],
     ["dark", copy.dark],
@@ -76,6 +97,35 @@ export function GlobalControls() {
 
   return (
     <div className="control-bar">
+      <div className="control-group">
+        <span className="control-label">{copy.notice}</span>
+        <div className="surface-card relative grid h-[2.4rem] min-w-[8.8rem] grid-cols-2 rounded-full border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.74)] p-[2px]">
+          <span
+            aria-hidden="true"
+            className="segmented-control-indicator pointer-events-none absolute bottom-[2px] left-[2px] top-[2px] rounded-full transition-transform duration-300 ease-out"
+            style={{
+              width: "calc((100% - 4px) / 2)",
+              transform: `translateX(${Math.max(0, activeNoticeIndex) * 100}%)`,
+            }}
+          />
+          {noticeOptions.map(([value, label]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setNoticeVisible(value)}
+              className={classNames(
+                "relative z-10 h-full rounded-full px-3 text-[0.84rem] font-semibold leading-none transition-colors duration-300",
+                noticeVisible === value
+                  ? "segmented-control-button-active"
+                  : "text-[var(--muted)] hover:text-[var(--ink)]"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="control-group">
         <span className="control-label">{copy.theme}</span>
         <div className="surface-card relative grid h-[2.4rem] min-w-[16.75rem] grid-cols-3 rounded-full border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.74)] p-[2px]">

@@ -1,4 +1,5 @@
 const MARKDOWN_BLOCK_START = /^(?:#{1,6}\s|>\s?|[-*+]\s+|\d+\.\s+|```|(?:-{3,}|\*{3,}|_{3,})\s*$)/;
+const HTML_BLOCK_START = /^(?:<!--|<!DOCTYPE|<[A-Za-z][\w:-]*(?:\s[^>]*)?>|<\/[A-Za-z][\w:-]*\s*>)/i;
 
 const EMOJI_SHORTCODES: Record<string, string> = {
   warning: "⚠️",
@@ -63,12 +64,56 @@ function preserveHtml(store: string[], html: string) {
   return token;
 }
 
+function preserveInlineHtmlTags(store: string[], text: string) {
+  return text.replace(
+    /<!--[\s\S]*?-->|<\/?[A-Za-z][\w:-]*(?:\s[^<>]*?)?\/?>/g,
+    (match) => preserveHtml(store, match)
+  );
+}
+
+function looksLikeHtmlBlockStart(value: string) {
+  return HTML_BLOCK_START.test(value);
+}
+
+function resolveHtmlBlockTagName(value: string) {
+  const match = value.match(/^<([A-Za-z][\w:-]*)\b/i);
+  return match ? match[1].toLowerCase() : "";
+}
+
+function isSelfContainedHtmlLine(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return true;
+  }
+  if (trimmed.startsWith("<!--") || trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("</")) {
+    return true;
+  }
+  if (/\/>\s*$/.test(trimmed)) {
+    return true;
+  }
+
+  const tagName = resolveHtmlBlockTagName(trimmed);
+  if (!tagName) {
+    return true;
+  }
+
+  if (
+    ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"].includes(tagName)
+  ) {
+    return true;
+  }
+
+  return new RegExp(`</${tagName}>`, "i").test(trimmed);
+}
+
 function renderInlineMarkdown(text: string) {
   const preserved: string[] = [];
 
   let rendered = text.replace(/`([^`]+)`/g, (_match, code) =>
     preserveHtml(preserved, `<code>${escapeHtml(code)}</code>`)
   );
+
+  rendered = preserveInlineHtmlTags(preserved, rendered);
 
   rendered = escapeHtml(rendered);
 
@@ -141,6 +186,30 @@ export function renderMarkdownToHtml(markdown: string, emptyLabel = "当前暂�
 
       const className = language ? ` class="language-${language}"` : "";
       blocks.push(`<pre><code${className}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    if (looksLikeHtmlBlockStart(trimmed)) {
+      const htmlLines: string[] = [];
+      const tagName = resolveHtmlBlockTagName(trimmed);
+      const collectUntilClosingTag = Boolean(tagName) && !isSelfContainedHtmlLine(trimmed);
+
+      while (index < lines.length) {
+        const htmlCandidate = lines[index] ?? "";
+        if (!collectUntilClosingTag && !htmlCandidate.trim()) {
+          break;
+        }
+        htmlLines.push(htmlCandidate);
+        index += 1;
+        if (
+          collectUntilClosingTag &&
+          new RegExp(`</${tagName}>`, "i").test(htmlCandidate)
+        ) {
+          break;
+        }
+      }
+
+      blocks.push(htmlLines.join("\n"));
       continue;
     }
 

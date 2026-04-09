@@ -88,11 +88,11 @@ function buildTranslationMessages(markdown: string, targetLanguage: NoticeTransl
     {
       role: "system",
       content:
-        "You are a translation engine for a Next.js app. Translate Markdown faithfully while preserving headings, emphasis, lists, blockquotes, links, inline code, fenced code blocks, emojis, spacing, and line breaks. Return translated Markdown only. Do not wrap the answer in code fences. Do not add explanations.",
+        "You are a translation engine for a Next.js app. Translate mixed Markdown and raw HTML faithfully. Preserve Markdown structure, headings, emphasis, lists, blockquotes, links, inline code, fenced code blocks, emojis, spacing, and line breaks. Preserve all HTML tags, attributes, class names, ids, inline styles, URLs, and nesting exactly as provided. Only translate user-visible natural-language text, including text nodes inside HTML elements. Do not translate code, URLs, email addresses, attribute names, CSS classes, ids, or inline JavaScript. Return translated content only, without code fences or explanations.",
     },
     {
       role: "user",
-      content: `Translate the following Markdown into ${targetLabel}. Keep the Markdown structure unchanged.\n\n${markdown}`,
+      content: `Translate the following Markdown/HTML content into ${targetLabel}. Keep both the Markdown structure and the HTML structure unchanged. If raw HTML is present, preserve every tag and attribute exactly and translate only the visible text content.\n\n${markdown}`,
     },
   ];
 }
