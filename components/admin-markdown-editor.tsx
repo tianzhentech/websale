@@ -29,21 +29,15 @@ type SaveResponse = {
 
 type AdminConfigResponse = {
   backend_api_base_url?: string;
-  backend_api_base_url_override?: string | null;
   backend_api_password?: string;
-  backend_api_password_override?: string | null;
-  extract_link_enabled?: boolean;
-  subscription_enabled?: boolean;
-  overview_activity_window_minutes?: number;
+  ai_api_base_url?: string;
+  ai_api_key?: string;
+  ai_model?: string;
+  extract_link_enabled?: boolean | null;
+  subscription_enabled?: boolean | null;
+  overview_activity_window_minutes?: number | null;
   notice_translation_system_prompt?: string;
-  notice_translation_system_prompt_override?: string | null;
   notice_translation_user_prompt_template?: string;
-  notice_translation_user_prompt_template_override?: string | null;
-  default_backend_api_base_url?: string;
-  default_backend_api_password?: string;
-  default_overview_activity_window_minutes?: number;
-  default_notice_translation_system_prompt?: string;
-  default_notice_translation_user_prompt_template?: string;
   detail?: string;
 };
 
@@ -82,21 +76,15 @@ export function AdminMarkdownEditor({
   const [password, setPassword] = useState("");
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [backendApiBaseUrl, setBackendApiBaseUrl] = useState("");
-  const [backendApiBaseUrlOverride, setBackendApiBaseUrlOverride] = useState<string | null>(null);
   const [backendApiPassword, setBackendApiPassword] = useState("");
-  const [backendApiPasswordOverride, setBackendApiPasswordOverride] = useState<string | null>(null);
-  const [defaultBackendApiBaseUrl, setDefaultBackendApiBaseUrl] = useState("");
-  const [defaultBackendApiPassword, setDefaultBackendApiPassword] = useState("");
+  const [aiApiBaseUrl, setAiApiBaseUrl] = useState("");
+  const [aiApiKey, setAiApiKey] = useState("");
+  const [aiModel, setAiModel] = useState("");
   const [extractLinkEnabled, setExtractLinkEnabled] = useState(true);
   const [subscriptionEnabled, setSubscriptionEnabled] = useState(true);
   const [overviewActivityWindowMinutes, setOverviewActivityWindowMinutes] = useState("");
-  const [defaultOverviewActivityWindowMinutes, setDefaultOverviewActivityWindowMinutes] = useState("");
   const [noticeTranslationSystemPrompt, setNoticeTranslationSystemPrompt] = useState("");
   const [noticeTranslationUserPromptTemplate, setNoticeTranslationUserPromptTemplate] = useState("");
-  const [defaultNoticeTranslationSystemPrompt, setDefaultNoticeTranslationSystemPrompt] =
-    useState("");
-  const [defaultNoticeTranslationUserPromptTemplate, setDefaultNoticeTranslationUserPromptTemplate] =
-    useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
@@ -113,14 +101,14 @@ export function AdminMarkdownEditor({
           backendLoadFailed: "后端地址配置加载失败。",
           backendSaveFailed: "后端地址保存失败。",
           backendSaved: "后端地址已更新。",
-          backendResetDone: "已恢复默认后端地址。",
+          aiSaveFailed: "AI 配置保存失败。",
+          aiSaved: "AI 配置已更新。",
           modeSaveFailed: "业务模式开关保存失败。",
           modeSaved: "业务模式开关已更新。",
           overviewSaveFailed: "热力图时间窗口保存失败。",
           overviewSaved: "热力图时间窗口已更新。",
           translationPromptSaveFailed: "公告翻译 Prompt 保存失败。",
           translationPromptSaved: "公告翻译 Prompt 已更新，并已重新触发多语言翻译。",
-          translationPromptResetDone: "公告翻译 Prompt 已恢复默认，并已重新触发多语言翻译。",
           admin: "Admin",
           title: "管理后台",
           introPrefix: "此页面仅供已授权管理员访问。",
@@ -145,23 +133,30 @@ export function AdminMarkdownEditor({
           emptyNotice: "当前暂无说明内容。",
           backendKicker: "Backend",
           backendTitle: "后端地址",
-          backendDescription: "这里设置 Next.js 管理端转发到哪一个 Pixel 后端。保存后，首页和管理端的服务端请求都会立即使用新地址，并自动带上当前配置的后端鉴权密码。",
+          backendDescription: "这里设置 Next.js 管理端转发到哪一个 Pixel 后端。保存后会直接写回 .env.local，首页和管理端的服务端请求都会立即使用新地址，并自动带上当前配置的后端鉴权密码。",
           backendInputLabel: "后端 API 地址",
           backendInputPlaceholder: "例如 http://127.0.0.1:8006",
           backendPasswordLabel: "后端鉴权密码",
           backendPasswordPlaceholder: "输入 Next.js 调后端时使用的密码",
           backendCurrentLabel: "当前生效地址",
-          backendDefaultLabel: "环境默认地址",
-          backendPasswordSourceLabel: "密码来源",
-          backendUsingOverride: "当前使用的是你在 Admin 页保存的覆盖地址。",
-          backendUsingDefault: "当前没有覆盖地址，系统会使用环境变量中的默认地址。",
-          backendPasswordUsingOverride: "当前使用的是你在 Admin 页保存的后端密码。",
-          backendPasswordUsingDefault: "当前没有覆盖密码，系统会使用 PIXEL_WEBSALE_API_PASSWORD 作为默认密码。",
+          backendCurrentPasswordLabel: "当前生效密码",
           backendSave: "保存地址",
-          backendReset: "恢复默认",
+          aiKicker: "AI",
+          aiTitle: "AI 接口配置",
+          aiDescription: "这里统一配置格式转换和公告翻译共用的 AI 接口参数。保存后会直接写回 .env.local 并立即生效。Base URL 请填写服务根地址，系统会自动请求 /v1/chat/completions。",
+          aiBaseUrlLabel: "AI Base URL",
+          aiBaseUrlPlaceholder: "例如 https://api.openai.com",
+          aiApiKeyLabel: "AI API Key",
+          aiApiKeyPlaceholder: "输入调用模型时使用的 API Key",
+          aiModelLabel: "模型名称",
+          aiModelPlaceholder: "例如 gpt-5.2",
+          aiActiveBaseUrlLabel: "当前生效 Base URL",
+          aiActiveApiKeyLabel: "当前生效 API Key",
+          aiActiveModelLabel: "当前生效模型",
+          aiSave: "保存 AI 配置",
           modeKicker: "Modes",
           modeTitle: "业务模式开关",
-          modeDescription: "在这里控制首页是否允许提交提链模式或订阅模式。切换后会立即生效；关闭后，对应入队按钮会显示正在维护，服务端也会拒绝该模式的提交请求。",
+          modeDescription: "在这里控制首页是否允许提交提链模式或订阅模式。切换后会直接写回 .env.local 并立即生效；关闭后，对应入队按钮会显示正在维护，服务端也会拒绝该模式的提交请求。",
           extractLinkMode: "提链模式",
           subscriptionMode: "订阅模式",
           modeEnabled: "开启",
@@ -170,21 +165,19 @@ export function AdminMarkdownEditor({
           modeDisableAction: "切换为维护",
           overviewKicker: "Overview",
           overviewTitle: "热力图时间窗口",
-          overviewDescription: "这里控制首页概览热力格子只保留最近多少分钟内的任务事件。保存后立即生效，超出窗口的旧事件会自动移出显示。",
+          overviewDescription: "这里控制首页概览热力格子只保留最近多少分钟内的任务事件。保存后会直接写回 .env.local 并立即生效，超出窗口的旧事件会自动移出显示。",
           overviewWindowLabel: "显示窗口（分钟）",
           overviewWindowPlaceholder: "例如 180",
           overviewCurrentLabel: "当前窗口",
-          overviewDefaultLabel: "默认窗口",
           overviewSave: "保存窗口",
           translationPromptKicker: "Translation",
           translationPromptTitle: "公告翻译 Prompt",
-          translationPromptDescription: "这里控制公告多语言翻译时发送给模型的提示词。保存后，系统会按新的 Prompt 重新后台生成英文和越南语副本。",
+          translationPromptDescription: "这里控制公告多语言翻译时发送给模型的提示词。保存后会直接写回 .env.local，系统会按新的 Prompt 重新后台生成英文和越南语副本。",
           translationPromptSystemLabel: "System Prompt",
           translationPromptUserLabel: "User Prompt 模板",
           translationPromptSystemPlaceholder: "输入翻译 system prompt",
           translationPromptUserPlaceholder: "输入带占位符的 user prompt 模板",
           translationPromptTokensLabel: "必须保留的占位符",
-          translationPromptReset: "恢复默认",
           translationPromptSave: "保存 Prompt",
         }
       : {
@@ -196,14 +189,14 @@ export function AdminMarkdownEditor({
           backendLoadFailed: "Failed to load backend address settings.",
           backendSaveFailed: "Failed to save the backend address.",
           backendSaved: "Backend address updated.",
-          backendResetDone: "Reverted to the default backend address.",
+          aiSaveFailed: "Failed to save the AI settings.",
+          aiSaved: "AI settings updated.",
           modeSaveFailed: "Failed to save run mode switches.",
           modeSaved: "Run mode switches updated.",
           overviewSaveFailed: "Failed to save the heatmap activity window.",
           overviewSaved: "Heatmap activity window updated.",
           translationPromptSaveFailed: "Failed to save the notice translation prompt.",
           translationPromptSaved: "Notice translation prompt updated. Background translations were requeued.",
-          translationPromptResetDone: "Notice translation prompt reverted to default and background translations were requeued.",
           admin: "Admin",
           title: "Admin Console",
           introPrefix: "This page is restricted to authorized administrators only.",
@@ -228,23 +221,30 @@ export function AdminMarkdownEditor({
           emptyNotice: "No notice content yet.",
           backendKicker: "Backend",
           backendTitle: "Backend Address",
-          backendDescription: "Set which Pixel backend the Next.js admin and homepage server routes should talk to. Once saved, server-side requests switch immediately and keep sending the currently configured backend password automatically.",
+          backendDescription: "Set which Pixel backend the Next.js admin and homepage server routes should talk to. Saving writes directly to .env.local, and server-side requests switch immediately while continuing to send the configured backend password automatically.",
           backendInputLabel: "Backend API URL",
           backendInputPlaceholder: "For example http://127.0.0.1:8006",
           backendPasswordLabel: "Backend Password",
           backendPasswordPlaceholder: "Enter the password Next.js should send to the backend",
           backendCurrentLabel: "Active backend",
-          backendDefaultLabel: "Env default",
-          backendPasswordSourceLabel: "Password source",
-          backendUsingOverride: "The admin page is currently using the saved override URL.",
-          backendUsingDefault: "No override is saved right now, so the env default URL is active.",
-          backendPasswordUsingOverride: "The admin page is currently using the saved override password.",
-          backendPasswordUsingDefault: "No override password is saved right now, so PIXEL_WEBSALE_API_PASSWORD is active.",
+          backendCurrentPasswordLabel: "Active backend password",
           backendSave: "Save URL",
-          backendReset: "Use Default",
+          aiKicker: "AI",
+          aiTitle: "AI Connection Settings",
+          aiDescription: "Control the shared AI endpoint used by the format converter and notice translation. Saving writes directly to .env.local and applies immediately. Enter the provider root URL here and the app will call /v1/chat/completions automatically.",
+          aiBaseUrlLabel: "AI Base URL",
+          aiBaseUrlPlaceholder: "For example https://api.openai.com",
+          aiApiKeyLabel: "AI API Key",
+          aiApiKeyPlaceholder: "Enter the API key used for model requests",
+          aiModelLabel: "Model Name",
+          aiModelPlaceholder: "For example gpt-5.2",
+          aiActiveBaseUrlLabel: "Active base URL",
+          aiActiveApiKeyLabel: "Active API key",
+          aiActiveModelLabel: "Active model",
+          aiSave: "Save AI Settings",
           modeKicker: "Modes",
           modeTitle: "Run Mode Switches",
-          modeDescription: "Control whether the homepage can submit redeem mode or subscription mode. Changes apply immediately. When a mode is off, its submit button shows maintenance and the server also rejects that mode.",
+          modeDescription: "Control whether the homepage can submit redeem mode or subscription mode. Saving writes directly to .env.local and applies immediately. When a mode is off, its submit button shows maintenance and the server also rejects that mode.",
           extractLinkMode: "Redeem Mode",
           subscriptionMode: "Subscription Mode",
           modeEnabled: "Enabled",
@@ -253,21 +253,19 @@ export function AdminMarkdownEditor({
           modeDisableAction: "Enter Maintenance",
           overviewKicker: "Overview",
           overviewTitle: "Heatmap Activity Window",
-          overviewDescription: "Control how many recent minutes of task events the homepage overview heatmap should keep. Changes apply immediately and older events outside the window drop out automatically.",
+          overviewDescription: "Control how many recent minutes of task events the homepage overview heatmap should keep. Saving writes directly to .env.local and applies immediately, and older events outside the window drop out automatically.",
           overviewWindowLabel: "Window (minutes)",
           overviewWindowPlaceholder: "For example 180",
           overviewCurrentLabel: "Active window",
-          overviewDefaultLabel: "Default window",
           overviewSave: "Save Window",
           translationPromptKicker: "Translation",
           translationPromptTitle: "Notice Translation Prompt",
-          translationPromptDescription: "Control the prompt sent to the model when the notice is translated into other languages. Saving here requeues the English and Vietnamese copies with the new prompt.",
+          translationPromptDescription: "Control the prompt sent to the model when the notice is translated into other languages. Saving writes directly to .env.local and requeues the English and Vietnamese copies with the new prompt.",
           translationPromptSystemLabel: "System Prompt",
           translationPromptUserLabel: "User Prompt Template",
           translationPromptSystemPlaceholder: "Enter the translation system prompt",
           translationPromptUserPlaceholder: "Enter the user prompt template with placeholders",
           translationPromptTokensLabel: "Required placeholders",
-          translationPromptReset: "Use Default",
           translationPromptSave: "Save Prompt",
         };
   const deferredMarkdown = useDeferredValue(markdown);
@@ -275,60 +273,31 @@ export function AdminMarkdownEditor({
     () => renderMarkdownToHtml(deferredMarkdown, copy.emptyNotice),
     [copy.emptyNotice, deferredMarkdown]
   );
-  const activeBackendApiBaseUrl =
-    backendApiBaseUrlOverride || defaultBackendApiBaseUrl || backendApiBaseUrl;
-  const activeBackendApiPassword =
-    backendApiPasswordOverride || defaultBackendApiPassword || backendApiPassword;
-  const maskedBackendApiPassword = activeBackendApiPassword
-    ? "*".repeat(Math.max(8, activeBackendApiPassword.length))
+  const maskedBackendApiPassword = backendApiPassword
+    ? "*".repeat(Math.max(8, backendApiPassword.length))
+    : "-";
+  const maskedAiApiKey = aiApiKey
+    ? "*".repeat(Math.max(8, aiApiKey.length))
     : "-";
 
   const applyAdminConfigPayload = (payload: AdminConfigResponse) => {
-    const nextDefault = payload.default_backend_api_base_url || "";
-    const nextOverride =
-      typeof payload.backend_api_base_url_override === "string" &&
-      payload.backend_api_base_url_override.trim()
-        ? payload.backend_api_base_url_override
-        : null;
-    const nextDefaultPassword = payload.default_backend_api_password || "";
-    const nextPasswordOverride =
-      typeof payload.backend_api_password_override === "string" &&
-      payload.backend_api_password_override.trim()
-        ? payload.backend_api_password_override
-        : null;
-
-    setDefaultBackendApiBaseUrl(nextDefault);
-    setBackendApiBaseUrlOverride(nextOverride);
-    setBackendApiBaseUrl(payload.backend_api_base_url || nextOverride || nextDefault);
-    setDefaultBackendApiPassword(nextDefaultPassword);
-    setBackendApiPasswordOverride(nextPasswordOverride);
-    setBackendApiPassword(
-      payload.backend_api_password || nextPasswordOverride || nextDefaultPassword
-    );
-    setExtractLinkEnabled(payload.extract_link_enabled !== false);
-    setSubscriptionEnabled(payload.subscription_enabled !== false);
-    const nextDefaultOverviewWindow =
-      typeof payload.default_overview_activity_window_minutes === "number" &&
-      Number.isFinite(payload.default_overview_activity_window_minutes)
-        ? String(payload.default_overview_activity_window_minutes)
-        : "";
-    const nextOverviewWindow =
+    setBackendApiBaseUrl(payload.backend_api_base_url || "");
+    setBackendApiPassword(payload.backend_api_password || "");
+    setAiApiBaseUrl(payload.ai_api_base_url || "");
+    setAiApiKey(payload.ai_api_key || "");
+    setAiModel(payload.ai_model || "");
+    setExtractLinkEnabled(payload.extract_link_enabled === true);
+    setSubscriptionEnabled(payload.subscription_enabled === true);
+    setOverviewActivityWindowMinutes(
       typeof payload.overview_activity_window_minutes === "number" &&
-      Number.isFinite(payload.overview_activity_window_minutes)
+        Number.isFinite(payload.overview_activity_window_minutes)
         ? String(payload.overview_activity_window_minutes)
-        : nextDefaultOverviewWindow;
-    const nextDefaultSystemPrompt = payload.default_notice_translation_system_prompt || "";
-    const nextDefaultUserPromptTemplate = payload.default_notice_translation_user_prompt_template || "";
-    setNoticeTranslationSystemPrompt(
-      payload.notice_translation_system_prompt || nextDefaultSystemPrompt
+        : ""
     );
+    setNoticeTranslationSystemPrompt(payload.notice_translation_system_prompt || "");
     setNoticeTranslationUserPromptTemplate(
-      payload.notice_translation_user_prompt_template || nextDefaultUserPromptTemplate
+      payload.notice_translation_user_prompt_template || ""
     );
-    setDefaultNoticeTranslationSystemPrompt(nextDefaultSystemPrompt);
-    setDefaultNoticeTranslationUserPromptTemplate(nextDefaultUserPromptTemplate);
-    setDefaultOverviewActivityWindowMinutes(nextDefaultOverviewWindow);
-    setOverviewActivityWindowMinutes(nextOverviewWindow);
   };
 
   const loadAdminConfig = async () => {
@@ -349,19 +318,15 @@ export function AdminMarkdownEditor({
   useEffect(() => {
     if (!isAuthenticated) {
       setBackendApiBaseUrl("");
-      setBackendApiBaseUrlOverride(null);
       setBackendApiPassword("");
-      setBackendApiPasswordOverride(null);
-      setDefaultBackendApiBaseUrl("");
-      setDefaultBackendApiPassword("");
+      setAiApiBaseUrl("");
+      setAiApiKey("");
+      setAiModel("");
       setExtractLinkEnabled(true);
       setSubscriptionEnabled(true);
       setOverviewActivityWindowMinutes("");
-      setDefaultOverviewActivityWindowMinutes("");
       setNoticeTranslationSystemPrompt("");
       setNoticeTranslationUserPromptTemplate("");
-      setDefaultNoticeTranslationSystemPrompt("");
-      setDefaultNoticeTranslationUserPromptTemplate("");
       return;
     }
 
@@ -459,28 +424,34 @@ export function AdminMarkdownEditor({
     });
   };
 
-  const handleResetBackendConfig = () => {
+  const handleSaveAiConfig = () => {
     startTransition(async () => {
       try {
         setError(null);
         setStatus(null);
 
         const response = await fetch("/api/admin/config", {
-          method: "DELETE",
+          method: "PUT",
           headers: {
+            "Content-Type": "application/json",
             "x-ui-language": language,
           },
+          body: JSON.stringify({
+            ai_api_base_url: aiApiBaseUrl,
+            ai_api_key: aiApiKey,
+            ai_model: aiModel,
+          }),
         });
 
         const payload = (await response.json().catch(() => ({}))) as AdminConfigResponse;
         if (!response.ok) {
-          throw new Error(payload.detail || copy.backendSaveFailed);
+          throw new Error(payload.detail || copy.aiSaveFailed);
         }
 
         applyAdminConfigPayload(payload);
-        setStatus(copy.backendResetDone);
+        setStatus(copy.aiSaved);
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : copy.backendSaveFailed);
+        setError(nextError instanceof Error ? nextError.message : copy.aiSaveFailed);
       }
     });
   };
@@ -591,39 +562,6 @@ export function AdminMarkdownEditor({
     });
   };
 
-  const handleResetTranslationPromptConfig = () => {
-    startTransition(async () => {
-      try {
-        setError(null);
-        setStatus(null);
-
-        const response = await fetch("/api/admin/config", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "x-ui-language": language,
-          },
-          body: JSON.stringify({
-            notice_translation_system_prompt: defaultNoticeTranslationSystemPrompt,
-            notice_translation_user_prompt_template: defaultNoticeTranslationUserPromptTemplate,
-          }),
-        });
-
-        const payload = (await response.json().catch(() => ({}))) as AdminConfigResponse;
-        if (!response.ok) {
-          throw new Error(payload.detail || copy.translationPromptSaveFailed);
-        }
-
-        applyAdminConfigPayload(payload);
-        setStatus(copy.translationPromptResetDone);
-      } catch (nextError) {
-        setError(
-          nextError instanceof Error ? nextError.message : copy.translationPromptSaveFailed
-        );
-      }
-    });
-  };
-
   const handleLogout = () => {
     startTransition(async () => {
       try {
@@ -635,19 +573,15 @@ export function AdminMarkdownEditor({
         setPassword("");
         setMarkdown("");
         setBackendApiBaseUrl("");
-        setBackendApiBaseUrlOverride(null);
         setBackendApiPassword("");
-        setBackendApiPasswordOverride(null);
-        setDefaultBackendApiBaseUrl("");
-        setDefaultBackendApiPassword("");
+        setAiApiBaseUrl("");
+        setAiApiKey("");
+        setAiModel("");
         setExtractLinkEnabled(true);
         setSubscriptionEnabled(true);
         setOverviewActivityWindowMinutes("");
-        setDefaultOverviewActivityWindowMinutes("");
         setNoticeTranslationSystemPrompt("");
         setNoticeTranslationUserPromptTemplate("");
-        setDefaultNoticeTranslationSystemPrompt("");
-        setDefaultNoticeTranslationUserPromptTemplate("");
         setError(null);
         setStatus(copy.loggedOut);
       }
@@ -849,17 +783,6 @@ export function AdminMarkdownEditor({
                     >
                       {isPending ? copy.saving : copy.backendSave}
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleResetBackendConfig}
-                      disabled={isPending}
-                      className={classNames(
-                        "theme-button-secondary",
-                        isPending && "theme-button-disabled"
-                      )}
-                    >
-                      {copy.backendReset}
-                    </button>
                   </div>
                 </div>
 
@@ -867,26 +790,97 @@ export function AdminMarkdownEditor({
                   <div>
                     <span className="font-semibold text-[var(--ink)]">{copy.backendCurrentLabel}:</span>{" "}
                     <span className="font-mono break-all text-[var(--teal)]">
-                      {activeBackendApiBaseUrl || "-"}
+                      {backendApiBaseUrl || "-"}
                     </span>
                   </div>
                   <div>
-                    <span className="font-semibold text-[var(--ink)]">{copy.backendDefaultLabel}:</span>{" "}
-                    <span className="font-mono break-all">
-                      {defaultBackendApiBaseUrl || "-"}
+                    <span className="font-semibold text-[var(--ink)]">{copy.backendCurrentPasswordLabel}:</span>{" "}
+                    <span className="font-mono break-all text-[var(--teal)]">{maskedBackendApiPassword}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="surface-soft rounded-[1.7rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.58)] p-4">
+              <div className="grid gap-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
+                    {copy.aiKicker}
+                  </div>
+                  <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">{copy.aiTitle}</h2>
+                  <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">
+                    {copy.aiDescription}
+                  </p>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                  <div className="grid gap-3">
+                    <label className="grid gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                        {copy.aiBaseUrlLabel}
+                      </span>
+                      <input
+                        type="url"
+                        value={aiApiBaseUrl}
+                        onChange={(event) => setAiApiBaseUrl(event.target.value)}
+                        placeholder={copy.aiBaseUrlPlaceholder}
+                        className="w-full rounded-[1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+                      />
+                    </label>
+
+                    <label className="grid gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                        {copy.aiApiKeyLabel}
+                      </span>
+                      <input
+                        type="password"
+                        value={aiApiKey}
+                        onChange={(event) => setAiApiKey(event.target.value)}
+                        placeholder={copy.aiApiKeyPlaceholder}
+                        className="w-full rounded-[1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+                      />
+                    </label>
+
+                    <label className="grid gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                        {copy.aiModelLabel}
+                      </span>
+                      <input
+                        type="text"
+                        value={aiModel}
+                        onChange={(event) => setAiModel(event.target.value)}
+                        placeholder={copy.aiModelPlaceholder}
+                        className="w-full rounded-[1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 lg:self-start">
+                    <button
+                      type="button"
+                      onClick={handleSaveAiConfig}
+                      disabled={isPending}
+                      className={classNames("", isPending ? "theme-button-disabled" : "theme-button-primary")}
+                    >
+                      {isPending ? copy.saving : copy.aiSave}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 text-sm leading-7 text-[var(--muted)]">
+                  <div>
+                    <span className="font-semibold text-[var(--ink)]">{copy.aiActiveBaseUrlLabel}:</span>{" "}
+                    <span className="font-mono break-all text-[var(--teal)]">
+                      {aiApiBaseUrl || "-"}
                     </span>
                   </div>
                   <div>
-                    {backendApiBaseUrlOverride ? copy.backendUsingOverride : copy.backendUsingDefault}
+                    <span className="font-semibold text-[var(--ink)]">{copy.aiActiveApiKeyLabel}:</span>{" "}
+                    <span className="font-mono break-all text-[var(--teal)]">{maskedAiApiKey}</span>
                   </div>
                   <div>
-                    <span className="font-semibold text-[var(--ink)]">{copy.backendPasswordSourceLabel}:</span>{" "}
-                    {backendApiPasswordOverride
-                      ? copy.backendPasswordUsingOverride
-                      : copy.backendPasswordUsingDefault}
-                  </div>
-                  <div className="font-mono break-all text-[var(--teal)]">
-                    {maskedBackendApiPassword}
+                    <span className="font-semibold text-[var(--ink)]">{copy.aiActiveModelLabel}:</span>{" "}
+                    <span className="font-mono break-all text-[var(--teal)]">{aiModel || "-"}</span>
                   </div>
                 </div>
               </div>
@@ -919,7 +913,7 @@ export function AdminMarkdownEditor({
                   ] as const).map((mode) => (
                     <article
                       key={mode.key}
-                      className="grid gap-4 rounded-[1.2rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.78)] px-4 py-4"
+                      className="surface-card grid gap-4 rounded-[1.2rem] border px-4 py-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -933,8 +927,8 @@ export function AdminMarkdownEditor({
                           className={classNames(
                             "inline-flex shrink-0 rounded-full px-3 py-1 text-xs font-semibold",
                             mode.enabled
-                              ? "bg-[rgba(18,92,95,0.1)] text-[var(--teal)]"
-                              : "bg-[rgba(151,61,44,0.12)] text-[#973d2c]"
+                              ? "bg-[var(--status-pill-bg)] text-[var(--status-pill-text)]"
+                              : "bg-[var(--notice-error-bg)] text-[var(--notice-error-text)]"
                           )}
                         >
                           {mode.enabled ? copy.modeEnabled : copy.modeMaintenance}
@@ -1016,12 +1010,6 @@ export function AdminMarkdownEditor({
                       {overviewActivityWindowMinutes || "-"}
                     </span>
                   </div>
-                  <div>
-                    <span className="font-semibold text-[var(--ink)]">{copy.overviewDefaultLabel}:</span>{" "}
-                    <span className="font-mono">
-                      {defaultOverviewActivityWindowMinutes || "-"}
-                    </span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1091,17 +1079,6 @@ export function AdminMarkdownEditor({
                       className={classNames("", isPending ? "theme-button-disabled" : "theme-button-primary")}
                     >
                       {isPending ? copy.saving : copy.translationPromptSave}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleResetTranslationPromptConfig}
-                      disabled={isPending}
-                      className={classNames(
-                        "theme-button-secondary",
-                        isPending && "theme-button-disabled"
-                      )}
-                    >
-                      {copy.translationPromptReset}
                     </button>
                   </div>
                 </div>

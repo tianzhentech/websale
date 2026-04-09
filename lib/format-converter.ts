@@ -1,6 +1,6 @@
 import "server-only";
 
-import { readServerEnv } from "@/lib/server-env";
+import { resolveAdminAiConfig } from "@/lib/admin-config";
 import {
   formatNormalizedAccountRecord,
   normalizeEmail,
@@ -33,46 +33,24 @@ export type FormatConverterResult = {
   validLineCount: number;
 };
 
-const FORMATTER_API_BASE_URL_ENV = "PIXEL_WEBSALE_FORMATTER_API_BASE_URL";
-const FORMATTER_API_KEY_ENV = "PIXEL_WEBSALE_FORMATTER_API_KEY";
-const FORMATTER_MODEL_ENV = "PIXEL_WEBSALE_FORMATTER_MODEL";
-const TRANSLATION_API_BASE_URL_ENV = "PIXEL_WEBSALE_TRANSLATION_API_BASE_URL";
-const TRANSLATION_API_KEY_ENV = "PIXEL_WEBSALE_TRANSLATION_API_KEY";
-const TRANSLATION_MODEL_ENV = "PIXEL_WEBSALE_TRANSLATION_MODEL";
-const DEFAULT_API_BASE_URL = "https://api.zectai.com";
-const DEFAULT_MODEL = "gpt-5.2";
 const DEFAULT_FORMATTER_CONCURRENCY = 8;
 
 export const MAX_FORMAT_CONVERTER_INPUT_LENGTH = 20_000;
 
-function normalizeApiBaseUrl(value: string) {
-  return value.replace(/\/+$/, "");
-}
+type FormatterRuntimeConfig = {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+};
 
-function resolveFormatterConfig() {
-  const baseUrl = normalizeApiBaseUrl(
-    readServerEnv(FORMATTER_API_BASE_URL_ENV) ||
-      readServerEnv(TRANSLATION_API_BASE_URL_ENV) ||
-      DEFAULT_API_BASE_URL
-  );
-  const apiKey =
-    readServerEnv(FORMATTER_API_KEY_ENV) ||
-    readServerEnv(TRANSLATION_API_KEY_ENV) ||
-    "";
-  const model =
-    readServerEnv(FORMATTER_MODEL_ENV) ||
-    readServerEnv(TRANSLATION_MODEL_ENV) ||
-    DEFAULT_MODEL;
+async function resolveFormatterConfig(): Promise<FormatterRuntimeConfig> {
+  const config = await resolveAdminAiConfig();
 
-  if (!apiKey) {
+  if (!config.apiKey) {
     throw new Error("Format converter API key is not configured.");
   }
 
-  return {
-    apiKey,
-    baseUrl,
-    model,
-  };
+  return config;
 }
 
 function buildFormatConverterMessages(source: string, retryReason?: string) {
@@ -252,7 +230,7 @@ async function mapWithConcurrency<T, R>(
 
 async function convertSingleLineThroughLlm(
   source: string,
-  config: ReturnType<typeof resolveFormatterConfig>,
+  config: FormatterRuntimeConfig,
   retryReason?: string
 ) {
   const upstream = await fetch(`${config.baseUrl}/v1/chat/completions`, {
@@ -297,7 +275,7 @@ async function convertSingleLineThroughLlm(
 
 async function convertSingleInputLine(
   sourceLine: { lineNumber: number; raw: string; trimmed: string },
-  config: ReturnType<typeof resolveFormatterConfig>
+  config: FormatterRuntimeConfig
 ) {
   const initialValidation = validateBulkAccountLine(sourceLine.trimmed, sourceLine.lineNumber);
   if (initialValidation.ok) {
@@ -372,7 +350,7 @@ export async function convertAccountFormat(source: string): Promise<FormatConver
     };
   }
 
-  const config = resolveFormatterConfig();
+  const config = await resolveFormatterConfig();
   const convertedLines = await mapWithConcurrency(
     nonEmptyLines,
     resolveFormatterConcurrency(),

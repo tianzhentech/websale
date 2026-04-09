@@ -7,7 +7,6 @@ import {
   type InvalidBulkAccountLine,
 } from "@/lib/account-format";
 import {
-  DEFAULT_OVERVIEW_ACTIVITY_WINDOW_MINUTES,
   readAdminRuntimeConfig,
 } from "@/lib/admin-config";
 import { readServerEnv } from "@/lib/server-env";
@@ -129,13 +128,9 @@ type OverviewActivityCell = {
 
 type RunModeAvailability = Record<RunMode, boolean>;
 
-const BACKEND_API_BASE_URL_ENV = "PIXEL_WEBSALE_API_BASE_URL";
-const BACKEND_API_PASSWORD_ENV = "PIXEL_WEBSALE_API_PASSWORD";
-const DEFAULT_BACKEND_API_BASE_URL = "http://127.0.0.1:8006";
 const BACKEND_API_TIMEOUT_ENV = "PIXEL_WEBSALE_API_TIMEOUT";
 const DEFAULT_BACKEND_API_TIMEOUT_MS = 15_000;
 const SITE_TITLE_ENV = "PIXEL_WEBSALE_SITE_TITLE";
-const DEFAULT_ADMIN_PASSWORD = "123456";
 const BACKEND_ADMIN_PASSWORD_HEADER = "x-pixel-admin-password";
 const DEFAULT_SITE_TITLE = "Pixel CDK Exchange";
 const OVERVIEW_ACTIVITY_TASK_LIMIT = 500;
@@ -195,14 +190,13 @@ function resolveSiteTitle() {
   return rawValue || DEFAULT_SITE_TITLE;
 }
 
-function resolveDefaultBackendApiBaseUrl() {
-  const rawValue = readServerEnv(BACKEND_API_BASE_URL_ENV);
-  return (rawValue || DEFAULT_BACKEND_API_BASE_URL).replace(/\/+$/, "");
-}
-
 async function resolveBackendApiBaseUrl() {
   const configured = await readAdminRuntimeConfig();
-  return configured.backend_api_base_url || resolveDefaultBackendApiBaseUrl();
+  if (!configured.backend_api_base_url) {
+    throw new Error("Backend API URL is not configured in .env.local.");
+  }
+
+  return configured.backend_api_base_url;
 }
 
 function resolveBackendApiTimeoutMs() {
@@ -214,13 +208,13 @@ function resolveBackendApiTimeoutMs() {
   return Math.trunc(value * 1000);
 }
 
-function resolveDefaultBackendAdminPassword() {
-  return readServerEnv(BACKEND_API_PASSWORD_ENV) || DEFAULT_ADMIN_PASSWORD;
-}
-
 async function resolveBackendAdminPassword() {
   const configured = await readAdminRuntimeConfig();
-  return configured.backend_api_password || resolveDefaultBackendAdminPassword();
+  if (!configured.backend_api_password) {
+    throw new Error("Backend API password is not configured in .env.local.");
+  }
+
+  return configured.backend_api_password;
 }
 
 async function backendUrl(path: string) {
@@ -262,6 +256,14 @@ function buildInvalidBulkLinesErrorMessage(invalidLines: InvalidBulkAccountLine[
 
 async function resolveRunModeAvailability(): Promise<RunModeAvailability> {
   const configured = await readAdminRuntimeConfig();
+  if (configured.extract_link_enabled === null) {
+    throw new Error("Extract link mode switch is not configured in .env.local.");
+  }
+
+  if (configured.subscription_enabled === null) {
+    throw new Error("Subscription mode switch is not configured in .env.local.");
+  }
+
   return {
     extract_link: configured.extract_link_enabled,
     subscription: configured.subscription_enabled,
@@ -546,10 +548,7 @@ function resolveActivityCell(task: QueueTask): OverviewActivityCell {
   };
 }
 
-function buildOverviewActivity(
-  tasks: QueueTask[],
-  windowMinutes = DEFAULT_OVERVIEW_ACTIVITY_WINDOW_MINUTES
-): OverviewActivity {
+function buildOverviewActivity(tasks: QueueTask[], windowMinutes: number): OverviewActivity {
   const endTimestamp = Date.now();
   const startTimestamp = endTimestamp - windowMinutes * 60 * 1000;
   const dayMap = new Map<string, OverviewActivityDay>();
@@ -740,6 +739,10 @@ export async function buildOverviewPayload() {
     resolveBackendApiBaseUrl(),
     readAdminRuntimeConfig(),
   ]);
+
+  if (adminConfig.overview_activity_window_minutes === null) {
+    throw new Error("Overview activity window is not configured in .env.local.");
+  }
 
   const activity = buildOverviewActivity(
     normalizeTaskListPayload(tasksPayload.tasks),

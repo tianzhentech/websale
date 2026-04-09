@@ -1,11 +1,6 @@
 export const NOTICE_TRANSLATION_TARGET_LANGUAGE_TOKEN = "{{targetLanguage}}";
 export const NOTICE_TRANSLATION_CONTENT_TOKEN = "{{content}}";
 
-export const DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT =
-  "You are a translation engine for a Next.js app. Translate mixed Markdown and raw HTML faithfully. Preserve Markdown structure, headings, emphasis, lists, blockquotes, links, inline code, fenced code blocks, emojis, spacing, and line breaks. Preserve all HTML tags, attributes, class names, ids, inline styles, URLs, and nesting exactly as provided. Only translate user-visible natural-language text, including text nodes inside HTML elements. Do not translate code, URLs, email addresses, attribute names, CSS classes, ids, or inline JavaScript. Return translated content only, without code fences or explanations.";
-
-export const DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE = `Translate the following Markdown/HTML content into ${NOTICE_TRANSLATION_TARGET_LANGUAGE_TOKEN}. Keep both the Markdown structure and the HTML structure unchanged. If raw HTML is present, preserve every tag and attribute exactly and translate only the visible text content.\n\n${NOTICE_TRANSLATION_CONTENT_TOKEN}`;
-
 function normalizePromptText(value: unknown) {
   const normalized = typeof value === "string" ? value.replace(/\r\n?/g, "\n").trim() : "";
   return normalized || null;
@@ -38,20 +33,24 @@ export function resolveNoticeTranslationPrompts(config: {
   notice_translation_system_prompt?: string | null;
   notice_translation_user_prompt_template?: string | null;
 }) {
-  let userPromptTemplate = DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE;
+  const systemPrompt = normalizeNoticeTranslationSystemPrompt(
+    config.notice_translation_system_prompt
+  );
+  if (!systemPrompt) {
+    throw new Error("Notice translation system prompt is not configured in .env.local.");
+  }
 
-  try {
-    userPromptTemplate =
-      normalizeNoticeTranslationUserPromptTemplate(config.notice_translation_user_prompt_template) ||
-      DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE;
-  } catch {
-    userPromptTemplate = DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE;
+  const userPromptTemplate = normalizeNoticeTranslationUserPromptTemplate(
+    config.notice_translation_user_prompt_template
+  );
+  if (!userPromptTemplate) {
+    throw new Error(
+      "Notice translation user prompt template is not configured in .env.local."
+    );
   }
 
   return {
-    systemPrompt:
-      normalizeNoticeTranslationSystemPrompt(config.notice_translation_system_prompt) ||
-      DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
+    systemPrompt,
     userPromptTemplate,
   };
 }

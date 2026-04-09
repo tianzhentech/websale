@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { readAdminRuntimeConfig } from "@/lib/admin-config";
+import { readAdminRuntimeConfig, resolveAdminAiConfig } from "@/lib/admin-config";
 import type { Language } from "@/lib/ui-language";
 import {
   NOTICE_SOURCE_LANGUAGE,
@@ -17,8 +17,6 @@ import {
   type NoticeTranslationLanguage,
 } from "@/lib/notice-board";
 import {
-  DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
-  DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE,
   fillNoticeTranslationUserPromptTemplate,
   resolveNoticeTranslationPrompts,
 } from "@/lib/notice-translation-prompts";
@@ -45,11 +43,6 @@ type ActiveNoticeTranslationPrompts = {
   userPromptTemplate: string;
 };
 
-const TRANSLATION_API_BASE_URL_ENV = "PIXEL_WEBSALE_TRANSLATION_API_BASE_URL";
-const TRANSLATION_API_KEY_ENV = "PIXEL_WEBSALE_TRANSLATION_API_KEY";
-const TRANSLATION_MODEL_ENV = "PIXEL_WEBSALE_TRANSLATION_MODEL";
-const DEFAULT_TRANSLATION_API_BASE_URL = "https://api.zectai.com";
-const DEFAULT_TRANSLATION_MODEL = "gpt-5.2";
 const NOTICE_TRANSLATION_MANIFEST_FILE = path.join(
   process.cwd(),
   "content",
@@ -80,10 +73,6 @@ function buildTranslationCacheKey(
     .digest("hex");
 }
 
-function normalizeApiBaseUrl(value: string) {
-  return value.replace(/\/+$/, "");
-}
-
 function resolveTranslationTargetLabel(language: NoticeTranslationLanguage) {
   if (language === "vi") {
     return "Vietnamese";
@@ -96,32 +85,29 @@ async function resolveActiveNoticeTranslationPrompts(): Promise<ActiveNoticeTran
   const prompts = resolveNoticeTranslationPrompts(config);
 
   return {
-    systemPrompt: prompts.systemPrompt || DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
-    userPromptTemplate:
-      prompts.userPromptTemplate || DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE,
+    systemPrompt: prompts.systemPrompt,
+    userPromptTemplate: prompts.userPromptTemplate,
     promptDigest: buildNoticeTranslationPromptDigest(
-      prompts.systemPrompt || DEFAULT_NOTICE_TRANSLATION_SYSTEM_PROMPT,
-      prompts.userPromptTemplate || DEFAULT_NOTICE_TRANSLATION_USER_PROMPT_TEMPLATE
+      prompts.systemPrompt,
+      prompts.userPromptTemplate
     ),
   };
 }
 
-function resolveTranslationConfig() {
-  const baseUrl = normalizeApiBaseUrl(
-    process.env[TRANSLATION_API_BASE_URL_ENV]?.trim() || DEFAULT_TRANSLATION_API_BASE_URL
-  );
-  const apiKey = process.env[TRANSLATION_API_KEY_ENV]?.trim() || "";
-  const model = process.env[TRANSLATION_MODEL_ENV]?.trim() || DEFAULT_TRANSLATION_MODEL;
+type TranslationRuntimeConfig = {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+};
 
-  if (!apiKey) {
+async function resolveTranslationConfig(): Promise<TranslationRuntimeConfig> {
+  const config = await resolveAdminAiConfig();
+
+  if (!config.apiKey) {
     throw new Error("Translation API key is not configured.");
   }
 
-  return {
-    apiKey,
-    baseUrl,
-    model,
-  };
+  return config;
 }
 
 function buildTranslationMessages(
@@ -335,7 +321,7 @@ async function translateNoticeMarkdown(
     return cached;
   }
 
-  const { apiKey, baseUrl, model } = resolveTranslationConfig();
+  const { apiKey, baseUrl, model } = await resolveTranslationConfig();
   const upstream = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: {
