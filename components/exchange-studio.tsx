@@ -167,6 +167,7 @@ type RetryExecutionPlan = {
   runMode: RunMode;
   accountMode: AccountMode;
   rawAccountLines: string[];
+  sourceTaskIds: number[];
   failedCount: number;
   taskLabel?: string;
 };
@@ -733,6 +734,40 @@ function mergeTaskSnapshots(currentTasks: QueueTask[], refreshedTasks: QueueTask
   return currentTasks.map((task) => refreshedById.get(task.id) || task);
 }
 
+function replaceRetriedTasks(
+  currentTasks: QueueTask[],
+  sourceTaskIds: number[],
+  nextTasks: QueueTask[]
+) {
+  const replacementCount = Math.min(sourceTaskIds.length, nextTasks.length);
+  if (!replacementCount) {
+    return currentTasks;
+  }
+
+  const replacements = new Map<number, QueueTask>();
+  for (let index = 0; index < replacementCount; index += 1) {
+    const sourceTaskId = sourceTaskIds[index];
+    const nextTask = nextTasks[index];
+    if (sourceTaskId > 0 && nextTask) {
+      replacements.set(sourceTaskId, nextTask);
+    }
+  }
+
+  if (!replacements.size) {
+    return currentTasks;
+  }
+
+  const currentTaskIds = new Set(currentTasks.map((task) => task.id));
+  const replacedTasks = currentTasks.map((task) => replacements.get(task.id) || task);
+  const missingReplacementTasks = Array.from(replacements.entries())
+    .filter(([sourceTaskId]) => !currentTaskIds.has(sourceTaskId))
+    .map(([, task]) => task);
+
+  return missingReplacementTasks.length
+    ? [...missingReplacementTasks, ...replacedTasks]
+    : replacedTasks;
+}
+
 function mergeEnqueueHistoryRecords(
   currentRecords: EnqueueHistoryRecord[],
   refreshedTasks: QueueTask[]
@@ -746,6 +781,46 @@ function mergeEnqueueHistoryRecords(
     ...record,
     items: record.items.map((item) => {
       const nextTask = refreshedById.get(item.task.id) || item.task;
+      return {
+        ...item,
+        task_id: nextTask.id,
+        task: nextTask,
+      };
+    }),
+  }));
+}
+
+function replaceRetriedEnqueueHistoryRecords(
+  currentRecords: EnqueueHistoryRecord[],
+  sourceTaskIds: number[],
+  nextTasks: QueueTask[]
+) {
+  const replacementCount = Math.min(sourceTaskIds.length, nextTasks.length);
+  if (!replacementCount) {
+    return currentRecords;
+  }
+
+  const replacements = new Map<number, QueueTask>();
+  for (let index = 0; index < replacementCount; index += 1) {
+    const sourceTaskId = sourceTaskIds[index];
+    const nextTask = nextTasks[index];
+    if (sourceTaskId > 0 && nextTask) {
+      replacements.set(sourceTaskId, nextTask);
+    }
+  }
+
+  if (!replacements.size) {
+    return currentRecords;
+  }
+
+  return currentRecords.map((record) => ({
+    ...record,
+    items: record.items.map((item) => {
+      const nextTask = replacements.get(item.task.id) || replacements.get(item.task_id);
+      if (!nextTask) {
+        return item;
+      }
+
       return {
         ...item,
         task_id: nextTask.id,
@@ -960,6 +1035,7 @@ function evaluateRetryConfirmation(
       rawAccountLines: selectedItems
         .map((item) => item.formattedAccountLine || "")
         .filter(Boolean),
+      sourceTaskIds: selectedItems.map((item) => item.taskId),
       failedCount: selectedItems.length,
       taskLabel: selectedItems.length === 1 ? selectedItems[0].taskLabel : undefined,
     },
@@ -1622,6 +1698,7 @@ export function ExchangeStudio() {
     runMode,
     accountMode,
     rawAccountLines,
+    sourceTaskIds,
     messageKind,
   }: {
     response: ExchangeResponse;
@@ -1629,28 +1706,49 @@ export function ExchangeStudio() {
     runMode: RunMode;
     accountMode: AccountMode;
     rawAccountLines: string[];
+    sourceTaskIds?: number[];
     messageKind: "initial" | "retrySingle" | "retryBatch";
   }) => {
     setCode(cdkCode);
-    setTaskList(response.tasks);
-    setSelectedTaskId(response.tasks[0]?.id ?? null);
-    setCurrentTaskPage(1);
     setDetail(response.detail);
 
-    const nextHistoryRecord = buildEnqueueHistoryRecord({
-      createdAt: response.generated_at,
-      cdkCode,
-      runMode,
-      accountMode,
-      tasks: response.tasks,
-      rawAccounts: rawAccountLines,
-      normalizedLines: response.normalized_lines,
-    });
-    if (nextHistoryRecord) {
-      setEnqueueHistory((currentRecords) =>
-        [nextHistoryRecord, ...currentRecords].slice(0, MAX_ENQUEUE_HISTORY_RECORDS)
+    if (messageKind === "initial") {
+      setTaskList(response.tasks);
+      setSelectedTaskId(response.tasks[0]?.id ?? null);
+      setCurrentTaskPage(1);
+
+      const nextHistoryRecord = buildEnqueueHistoryRecord({
+        createdAt: response.generated_at,
+        cdkCode,
+        runMode,
+        accountMode,
+        tasks: response.tasks,
+        rawAccounts: rawAccountLines,
+        normalizedLines: response.normalized_lines,
+      });
+      if (nextHistoryRecord) {
+        setEnqueueHistory((currentRecords) =>
+          [nextHistoryRecord, ...currentRecords].slice(0, MAX_ENQUEUE_HISTORY_RECORDS)
+        );
+        setSelectedQueueHistoryId(nextHistoryRecord.id);
+      }
+    } else if (sourceTaskIds?.length) {
+      setTaskList((currentTasks) =>
+        replaceRetriedTasks(currentTasks, sourceTaskIds, response.tasks)
       );
-      setSelectedQueueHistoryId(nextHistoryRecord.id);
+      setEnqueueHistory((currentRecords) =>
+        replaceRetriedEnqueueHistoryRecords(currentRecords, sourceTaskIds, response.tasks)
+      );
+      setSelectedTaskId((currentSelectedTaskId) => {
+        if (currentSelectedTaskId !== null) {
+          const selectedIndex = sourceTaskIds.indexOf(currentSelectedTaskId);
+          if (selectedIndex >= 0) {
+            return response.tasks[selectedIndex]?.id ?? currentSelectedTaskId;
+          }
+        }
+
+        return currentSelectedTaskId;
+      });
     }
 
     const localizedRunModeLabel =
@@ -1725,6 +1823,7 @@ export function ExchangeStudio() {
         runMode: plan.runMode,
         accountMode: "single",
         rawAccountLines: [validation.formatted],
+        sourceTaskIds: plan.sourceTaskIds,
         messageKind: "retrySingle",
       });
       return;
@@ -1762,6 +1861,7 @@ export function ExchangeStudio() {
       runMode: plan.runMode,
       accountMode: "bulk",
       rawAccountLines: bulkValidation.validLines,
+      sourceTaskIds: plan.sourceTaskIds,
       messageKind: "retryBatch",
     });
   };
