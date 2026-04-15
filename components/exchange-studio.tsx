@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import {
   isEmailAddress,
+  isValidTwofaSecret,
+  normalizeTwofaSecret,
   validateBulkAccountLine,
   validateBulkAccountText,
   type AccountFormatIssueCode,
@@ -200,8 +202,12 @@ type FormatConvertResponse = {
 
 const CDK_STORAGE_KEY = "pixel-websale-cdk-code";
 const ENQUEUE_HISTORY_STORAGE_KEY = "pixel-websale-enqueue-history";
+const QUEUE_HISTORY_TWOFA_PREFIX_ENABLED_STORAGE_KEY =
+  "pixel-websale-queue-history-twofa-prefix-enabled";
+const QUEUE_HISTORY_TWOFA_PREFIX_STORAGE_KEY = "pixel-websale-queue-history-twofa-prefix";
 const MAX_ENQUEUE_HISTORY_RECORDS = 48;
 const BULK_TEXT_PLACEHOLDER = "demo.user@example.com---Passw0rd!---JBSWY3DPEHPK3PXP";
+const DEFAULT_QUEUE_HISTORY_TWOFA_PREFIX = "https://2fa.run/2fa/";
 const TASK_LIST_PAGE_SIZE = 5;
 const transactionGridTemplate =
   "minmax(10rem,1.7fr) minmax(8rem,1.1fr) minmax(4.5rem,0.7fr) minmax(5.5rem,0.9fr) minmax(4.5rem,0.8fr) minmax(4.5rem,0.8fr) minmax(16rem,4fr)";
@@ -280,6 +286,8 @@ const LANGUAGE_COPY = {
     queueHistoryCopy: "复制账号",
     queueHistoryCopied: "已复制",
     queueHistoryCopyFailed: "复制失败，请手动选中账号内容。",
+    queueHistoryTwofaPrefixToggle: "添加 2FA 前缀",
+    queueHistoryTwofaPrefixPlaceholder: "https://2fa.run/2fa/",
     retryTask: "重排",
     retryAllFailed: "一键重排",
     retryConfirmTitleSingle: "确认重排失败任务",
@@ -476,6 +484,8 @@ const LANGUAGE_COPY = {
     queueHistoryCopy: "Copy Accounts",
     queueHistoryCopied: "Copied",
     queueHistoryCopyFailed: "Copy failed. Please select the account lines manually.",
+    queueHistoryTwofaPrefixToggle: "Add 2FA Prefix",
+    queueHistoryTwofaPrefixPlaceholder: "https://2fa.run/2fa/",
     retryTask: "Retry",
     retryAllFailed: "Retry Failed",
     retryConfirmTitleSingle: "Retry this failed task",
@@ -696,6 +706,28 @@ function normalizeStoredQueueTask(value: unknown): QueueTask | null {
 
 function buildRawAccountLine(email: string, password: string, twofaKey: string) {
   return `${email}---${password}---${twofaKey}`;
+}
+
+function buildQueueHistoryCopyLine(rawAccountLine: string, prefixEnabled: boolean, prefixValue: string) {
+  const trimmedLine = rawAccountLine.trim();
+  if (!trimmedLine || !prefixEnabled) {
+    return trimmedLine;
+  }
+
+  const match = trimmedLine.match(/^(.*?)\s*---\s*(.*?)\s*---\s*(.*)$/);
+  if (!match) {
+    return trimmedLine;
+  }
+
+  const email = (match[1] || "").trim();
+  const password = (match[2] || "").trim();
+  const twofaSecret = normalizeTwofaSecret(match[3] || "");
+  if (!email || !password || !isValidTwofaSecret(twofaSecret)) {
+    return trimmedLine;
+  }
+
+  const normalizedPrefix = prefixValue.trim() || DEFAULT_QUEUE_HISTORY_TWOFA_PREFIX;
+  return `${email}---${password}---${normalizedPrefix}${twofaSecret}`;
 }
 
 function buildFallbackHistoryRawAccount(task: QueueTask) {
@@ -1100,6 +1132,8 @@ export function ExchangeStudio() {
   const [taskList, setTaskList] = useState<QueueTask[]>([]);
   const [enqueueHistory, setEnqueueHistory] = useState<EnqueueHistoryRecord[]>([]);
   const [hasLoadedEnqueueHistory, setHasLoadedEnqueueHistory] = useState(false);
+  const [hasLoadedQueueHistoryTwofaPrefix, setHasLoadedQueueHistoryTwofaPrefix] =
+    useState(false);
   const [isQueueHistoryOpen, setIsQueueHistoryOpen] = useState(false);
   const [selectedQueueHistoryId, setSelectedQueueHistoryId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -1107,6 +1141,10 @@ export function ExchangeStudio() {
   const [copyFeedback, setCopyFeedback] = useState<"copied" | "failed" | null>(null);
   const [queueHistoryCopyFeedback, setQueueHistoryCopyFeedback] =
     useState<EnqueueHistoryCopyFeedback | null>(null);
+  const [queueHistoryTwofaPrefixEnabled, setQueueHistoryTwofaPrefixEnabled] = useState(false);
+  const [queueHistoryTwofaPrefix, setQueueHistoryTwofaPrefix] = useState(
+    DEFAULT_QUEUE_HISTORY_TWOFA_PREFIX
+  );
   const [retryConfirmation, setRetryConfirmation] =
     useState<RetryConfirmationState | null>(null);
   const taskListRef = useRef<QueueTask[]>([]);
@@ -1246,6 +1284,26 @@ export function ExchangeStudio() {
   }, []);
 
   useEffect(() => {
+    try {
+      const storedEnabled = window.localStorage.getItem(
+        QUEUE_HISTORY_TWOFA_PREFIX_ENABLED_STORAGE_KEY
+      );
+      if (storedEnabled === "1") {
+        setQueueHistoryTwofaPrefixEnabled(true);
+      }
+
+      const storedPrefix = window.localStorage.getItem(QUEUE_HISTORY_TWOFA_PREFIX_STORAGE_KEY);
+      if (storedPrefix !== null) {
+        setQueueHistoryTwofaPrefix(storedPrefix);
+      }
+    } catch {
+      // Ignore localStorage access errors in restricted browser modes.
+    } finally {
+      setHasLoadedQueueHistoryTwofaPrefix(true);
+    }
+  }, []);
+
+  useEffect(() => {
     setCurrentTaskPage((currentPage) => Math.min(Math.max(1, currentPage), totalTaskPages));
   }, [totalTaskPages]);
 
@@ -1306,6 +1364,29 @@ export function ExchangeStudio() {
       // Ignore localStorage access errors in restricted browser modes.
     }
   }, [enqueueHistory, hasLoadedEnqueueHistory]);
+
+  useEffect(() => {
+    if (!hasLoadedQueueHistoryTwofaPrefix) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        QUEUE_HISTORY_TWOFA_PREFIX_ENABLED_STORAGE_KEY,
+        queueHistoryTwofaPrefixEnabled ? "1" : "0"
+      );
+      window.localStorage.setItem(
+        QUEUE_HISTORY_TWOFA_PREFIX_STORAGE_KEY,
+        queueHistoryTwofaPrefix
+      );
+    } catch {
+      // Ignore localStorage access errors in restricted browser modes.
+    }
+  }, [
+    hasLoadedQueueHistoryTwofaPrefix,
+    queueHistoryTwofaPrefix,
+    queueHistoryTwofaPrefixEnabled,
+  ]);
 
   useEffect(() => {
     if (!hasLoadedStoredCode) {
@@ -2148,7 +2229,13 @@ export function ExchangeStudio() {
           ? item.task.status === "success"
           : isFailedTaskStatus(item.task.status)
       )
-      .map((item) => item.raw_account.trim())
+      .map((item) =>
+        buildQueueHistoryCopyLine(
+          item.raw_account,
+          queueHistoryTwofaPrefixEnabled,
+          queueHistoryTwofaPrefix
+        )
+      )
       .filter(Boolean);
 
     if (!lines.length) {
@@ -2694,6 +2781,10 @@ export function ExchangeStudio() {
         onSelectRecord={setSelectedQueueHistoryId}
         onCopyColumn={handleCopyQueueHistoryColumn}
         copyFeedback={queueHistoryCopyFeedback}
+        twofaPrefixEnabled={queueHistoryTwofaPrefixEnabled}
+        twofaPrefixValue={queueHistoryTwofaPrefix}
+        onTwofaPrefixEnabledChange={setQueueHistoryTwofaPrefixEnabled}
+        onTwofaPrefixValueChange={setQueueHistoryTwofaPrefix}
       />
       <RetryConfirmDialog
         open={retryConfirmation !== null}
@@ -2744,6 +2835,10 @@ function QueueHistoryDialog({
   onSelectRecord,
   onCopyColumn,
   copyFeedback,
+  twofaPrefixEnabled,
+  twofaPrefixValue,
+  onTwofaPrefixEnabledChange,
+  onTwofaPrefixValueChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -2754,6 +2849,10 @@ function QueueHistoryDialog({
   onSelectRecord: (recordId: string) => void;
   onCopyColumn: (record: EnqueueHistoryRecord, column: "success" | "failed") => void;
   copyFeedback: EnqueueHistoryCopyFeedback | null;
+  twofaPrefixEnabled: boolean;
+  twofaPrefixValue: string;
+  onTwofaPrefixEnabledChange: (enabled: boolean) => void;
+  onTwofaPrefixValueChange: (value: string) => void;
 }) {
   if (!open) {
     return null;
@@ -2787,9 +2886,58 @@ function QueueHistoryDialog({
             onSelectRecord={onSelectRecord}
             onCopyColumn={onCopyColumn}
             copyFeedback={copyFeedback}
+            twofaPrefixEnabled={twofaPrefixEnabled}
+            twofaPrefixValue={twofaPrefixValue}
+            onTwofaPrefixEnabledChange={onTwofaPrefixEnabledChange}
+            onTwofaPrefixValueChange={onTwofaPrefixValueChange}
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+function QueueHistoryTwofaPrefixControl({
+  copy,
+  enabled,
+  value,
+  onEnabledChange,
+  onValueChange,
+}: {
+  copy: ExchangeStudioCopy;
+  enabled: boolean;
+  value: string;
+  onEnabledChange: (enabled: boolean) => void;
+  onValueChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <label className="surface-soft inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold text-[var(--muted)]">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => onEnabledChange(event.target.checked)}
+          className="h-4 w-4 accent-[var(--teal)]"
+        />
+        <span>{copy.queueHistoryTwofaPrefixToggle}</span>
+      </label>
+      <input
+        value={value}
+        onChange={(event) => onValueChange(event.target.value)}
+        onBlur={() => {
+          if (!value.trim()) {
+            onValueChange(DEFAULT_QUEUE_HISTORY_TWOFA_PREFIX);
+          }
+        }}
+        placeholder={copy.queueHistoryTwofaPrefixPlaceholder}
+        disabled={!enabled}
+        className={classNames(
+          "w-[15rem] max-w-full rounded-full border px-3 py-2 text-xs outline-none transition",
+          enabled
+            ? "border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+            : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.56)] text-[var(--muted)]"
+        )}
+      />
     </div>
   );
 }
@@ -2802,6 +2950,10 @@ function EnqueueHistoryPanel({
   onSelectRecord,
   onCopyColumn,
   copyFeedback,
+  twofaPrefixEnabled,
+  twofaPrefixValue,
+  onTwofaPrefixEnabledChange,
+  onTwofaPrefixValueChange,
 }: {
   copy: ExchangeStudioCopy;
   locale: string;
@@ -2810,6 +2962,10 @@ function EnqueueHistoryPanel({
   onSelectRecord: (recordId: string) => void;
   onCopyColumn: (record: EnqueueHistoryRecord, column: "success" | "failed") => void;
   copyFeedback: EnqueueHistoryCopyFeedback | null;
+  twofaPrefixEnabled: boolean;
+  twofaPrefixValue: string;
+  onTwofaPrefixEnabledChange: (enabled: boolean) => void;
+  onTwofaPrefixValueChange: (value: string) => void;
 }) {
   const orderedRecords = [...records].sort((left, right) => {
     const leftTime = Date.parse(left.created_at);
@@ -2859,8 +3015,17 @@ function EnqueueHistoryPanel({
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
           {copy.queueHistory}
         </div>
-        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-          {copy.queueHistoryLocalHint}
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <QueueHistoryTwofaPrefixControl
+            copy={copy}
+            enabled={twofaPrefixEnabled}
+            value={twofaPrefixValue}
+            onEnabledChange={onTwofaPrefixEnabledChange}
+            onValueChange={onTwofaPrefixValueChange}
+          />
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+            {copy.queueHistoryLocalHint}
+          </div>
         </div>
       </div>
 
