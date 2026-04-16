@@ -286,6 +286,7 @@ const LANGUAGE_COPY = {
     queueHistoryCopy: "复制账号",
     queueHistoryCopied: "已复制",
     queueHistoryCopyFailed: "复制失败，请手动选中账号内容。",
+    queueHistoryRedeemLinkLine: "兑换链接：{link}",
     queueHistoryTwofaPrefixToggle: "添加 2FA 前缀",
     queueHistoryTwofaPrefixPlaceholder: "https://2fa.run/2fa/",
     retryTask: "重排",
@@ -484,6 +485,7 @@ const LANGUAGE_COPY = {
     queueHistoryCopy: "Copy Accounts",
     queueHistoryCopied: "Copied",
     queueHistoryCopyFailed: "Copy failed. Please select the account lines manually.",
+    queueHistoryRedeemLinkLine: "Redeem Link: {link}",
     queueHistoryTwofaPrefixToggle: "Add 2FA Prefix",
     queueHistoryTwofaPrefixPlaceholder: "https://2fa.run/2fa/",
     retryTask: "Retry",
@@ -732,6 +734,38 @@ function buildQueueHistoryCopyLine(rawAccountLine: string, prefixEnabled: boolea
 
 function buildFallbackHistoryRawAccount(task: QueueTask) {
   return task.email ? `${task.email}` : `#${task.id}`;
+}
+
+function getQueueHistoryRedeemLink(task: QueueTask) {
+  const successMessage = task.success_message?.trim() || "";
+  return task.status === "success" &&
+    task.run_mode === "extract_link" &&
+    isHttpUrl(successMessage)
+    ? successMessage
+    : null;
+}
+
+function buildQueueHistoryItemText(
+  item: EnqueueHistoryItem,
+  copy: ExchangeStudioCopy,
+  options?: {
+    prefixEnabled?: boolean;
+    prefixValue?: string;
+  }
+) {
+  const accountLine =
+    options?.prefixEnabled
+      ? buildQueueHistoryCopyLine(item.raw_account, true, options.prefixValue || "")
+      : item.raw_account.trim();
+  const redeemLink = getQueueHistoryRedeemLink(item.task);
+
+  if (!redeemLink) {
+    return accountLine;
+  }
+
+  return [accountLine, copy.queueHistoryRedeemLinkLine.replace("{link}", redeemLink)]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function createHistoryRecordId() {
@@ -2230,11 +2264,10 @@ export function ExchangeStudio() {
           : isFailedTaskStatus(item.task.status)
       )
       .map((item) =>
-        buildQueueHistoryCopyLine(
-          item.raw_account,
-          queueHistoryTwofaPrefixEnabled,
-          queueHistoryTwofaPrefix
-        )
+        buildQueueHistoryItemText(item, copy, {
+          prefixEnabled: queueHistoryTwofaPrefixEnabled,
+          prefixValue: queueHistoryTwofaPrefix,
+        })
       )
       .filter(Boolean);
 
@@ -3154,7 +3187,7 @@ function EnqueueHistoryPanel({
                               style={index > 0 ? { borderColor: "var(--surface-border)" } : undefined}
                             >
                               <div className="break-all font-mono text-xs leading-6 text-[var(--ink)] whitespace-pre-wrap">
-                                {item.raw_account}
+                                {buildQueueHistoryItemText(item, copy)}
                               </div>
                             </div>
                           ))}
