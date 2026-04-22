@@ -133,6 +133,18 @@ type EnqueueHistoryCopyFeedback = {
   status: "copied" | "failed";
 };
 
+type TaskCardCopyFeedback = {
+  taskId: number;
+  field: "email" | "password" | "twofa" | "redeemLink";
+  status: "copied" | "failed";
+};
+
+type TaskAccountSnapshot = {
+  email: string;
+  password: string | null;
+  twofaSecret: string | null;
+};
+
 type RetryConfirmationItem = {
   taskId: number;
   email: string;
@@ -332,6 +344,11 @@ const LANGUAGE_COPY = {
     linkCopied: "链接已复制",
     copyLink: "复制链接",
     openLink: "打开链接",
+    taskCardCopyHint: "点击复制",
+    taskCardCopied: "已复制",
+    taskCardCopyFailed: "复制失败",
+    taskCardValueMissing: "未获取",
+    taskCardLinkPending: "等待生成",
     noLinkResult: "任务已经成功完成，但当前没有拿到可直接打开的链接结果。",
     copyFailed: "复制失败，请手动选中上面的提链结果。",
     subscriptionResult: "订阅结果",
@@ -531,6 +548,11 @@ const LANGUAGE_COPY = {
     linkCopied: "Link Copied",
     copyLink: "Copy Link",
     openLink: "Open Link",
+    taskCardCopyHint: "Click to copy",
+    taskCardCopied: "Copied",
+    taskCardCopyFailed: "Copy failed",
+    taskCardValueMissing: "Unavailable",
+    taskCardLinkPending: "Pending",
     noLinkResult: "The task finished successfully, but there is no directly openable link result yet.",
     copyFailed: "Copy failed. Please select the redeem result manually.",
     subscriptionResult: "Subscription Result",
@@ -708,6 +730,26 @@ function normalizeStoredQueueTask(value: unknown): QueueTask | null {
 
 function buildRawAccountLine(email: string, password: string, twofaKey: string) {
   return `${email}---${password}---${twofaKey}`;
+}
+
+function buildTaskAccountSnapshot(task: QueueTask, rawAccountLine?: string | null): TaskAccountSnapshot {
+  const trimmedLine = rawAccountLine?.trim() || "";
+  if (trimmedLine) {
+    const validation = validateBulkAccountLine(trimmedLine, 1);
+    if (validation.ok) {
+      return {
+        email: validation.record.email,
+        password: validation.record.password,
+        twofaSecret: validation.record.twofaSecret,
+      };
+    }
+  }
+
+  return {
+    email: task.email || "",
+    password: null,
+    twofaSecret: null,
+  };
 }
 
 function buildQueueHistoryCopyLine(rawAccountLine: string, prefixEnabled: boolean, prefixValue: string) {
@@ -1172,7 +1214,8 @@ export function ExchangeStudio() {
   const [selectedQueueHistoryId, setSelectedQueueHistoryId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [currentTaskPage, setCurrentTaskPage] = useState(1);
-  const [copyFeedback, setCopyFeedback] = useState<"copied" | "failed" | null>(null);
+  const [taskCardCopyFeedback, setTaskCardCopyFeedback] =
+    useState<TaskCardCopyFeedback | null>(null);
   const [queueHistoryCopyFeedback, setQueueHistoryCopyFeedback] =
     useState<EnqueueHistoryCopyFeedback | null>(null);
   const [queueHistoryTwofaPrefixEnabled, setQueueHistoryTwofaPrefixEnabled] = useState(false);
@@ -1244,6 +1287,23 @@ export function ExchangeStudio() {
           rawAccountLine,
           formattedAccountLine: validation.formatted,
         });
+      }
+    }
+
+    return nextLookup;
+  }, [enqueueHistory]);
+  const taskAccountSnapshotById = useMemo(() => {
+    const nextLookup = new Map<number, TaskAccountSnapshot>();
+
+    for (const record of enqueueHistory) {
+      for (const item of record.items) {
+        const snapshot = buildTaskAccountSnapshot(item.task, item.raw_account);
+        if (item.task_id > 0 && !nextLookup.has(item.task_id)) {
+          nextLookup.set(item.task_id, snapshot);
+        }
+        if (item.task.id > 0 && !nextLookup.has(item.task.id)) {
+          nextLookup.set(item.task.id, snapshot);
+        }
       }
     }
 
@@ -1654,18 +1714,18 @@ export function ExchangeStudio() {
   ]);
 
   useEffect(() => {
-    if (!copyFeedback) {
+    if (!taskCardCopyFeedback) {
       return;
     }
 
     const timer = window.setTimeout(() => {
-      setCopyFeedback(null);
-    }, 2200);
+      setTaskCardCopyFeedback(null);
+    }, 1800);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [copyFeedback]);
+  }, [taskCardCopyFeedback]);
 
   useEffect(() => {
     if (!queueHistoryCopyFeedback) {
@@ -2229,26 +2289,11 @@ export function ExchangeStudio() {
     });
   };
 
-  const successResultLink = task ? getTaskRedeemLink(task) : null;
-  const showBusinessResultPanel = task?.run_mode === "extract_link" && task.status === "success";
   const cdkSummaryText = detail
     ? isChinese
       ? `${copy.cdkStatuses[detail.cdk.status as keyof typeof copy.cdkStatuses] || detail.status_label} · 可用 ${detail.cdk.available_amount} · 预留 ${detail.cdk.reserved_amount} · 总余额 ${detail.cdk.remaining_amount}`
       : `${copy.cdkStatuses[detail.cdk.status as keyof typeof copy.cdkStatuses] || detail.cdk.status} · Available ${detail.cdk.available_amount} · Reserved ${detail.cdk.reserved_amount} · Total ${detail.cdk.remaining_amount}`
     : null;
-
-  const handleCopySuccessLink = async () => {
-    if (!successResultLink) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(successResultLink);
-      setCopyFeedback("copied");
-    } catch {
-      setCopyFeedback("failed");
-    }
-  };
 
   const handleCopyQueueHistoryColumn = async (
     record: EnqueueHistoryRecord,
@@ -2283,6 +2328,34 @@ export function ExchangeStudio() {
       setQueueHistoryCopyFeedback({
         recordId: record.id,
         column,
+        status: "failed",
+      });
+    }
+  };
+
+  const handleCopyTaskCardField = async (
+    taskId: number,
+    field: TaskCardCopyFeedback["field"],
+    value: string
+  ) => {
+    const normalizedValue = value.trim();
+    if (!normalizedValue) {
+      return;
+    }
+
+    setSelectedTaskId(taskId);
+
+    try {
+      await navigator.clipboard.writeText(normalizedValue);
+      setTaskCardCopyFeedback({
+        taskId,
+        field,
+        status: "copied",
+      });
+    } catch {
+      setTaskCardCopyFeedback({
+        taskId,
+        field,
         status: "failed",
       });
     }
@@ -2597,6 +2670,8 @@ export function ExchangeStudio() {
                   const isFailedItem = isFailedTaskStatus(item.status);
                   const canRetryItem = isFailedItem && retrySourceByTaskId.has(item.id);
                   const itemRedeemLink = getTaskRedeemLink(item);
+                  const itemAccountSnapshot =
+                    taskAccountSnapshotById.get(item.id) || buildTaskAccountSnapshot(item);
                   const itemTaskStatusLabel =
                     copy.taskStatuses[item.status as keyof typeof copy.taskStatuses] || item.status;
                   const itemChargeStatusLabel =
@@ -2606,6 +2681,40 @@ export function ExchangeStudio() {
                       : copy.unbound);
                   const itemTaskError = item.error_message?.trim() || null;
                   const itemChargeError = item.cdk_charge_error?.trim() || null;
+                  const itemFields = [
+                    {
+                      key: "email" as const,
+                      label: copy.email,
+                      value: itemAccountSnapshot.email || item.email || copy.taskCardValueMissing,
+                      copyValue: itemAccountSnapshot.email || item.email || "",
+                      mono: false,
+                    },
+                    {
+                      key: "password" as const,
+                      label: copy.password,
+                      value: itemAccountSnapshot.password || copy.taskCardValueMissing,
+                      copyValue: itemAccountSnapshot.password || "",
+                      mono: true,
+                    },
+                    {
+                      key: "twofa" as const,
+                      label: copy.totpKey,
+                      value: itemAccountSnapshot.twofaSecret || copy.taskCardValueMissing,
+                      copyValue: itemAccountSnapshot.twofaSecret || "",
+                      mono: true,
+                    },
+                    ...(item.run_mode === "extract_link"
+                      ? [
+                          {
+                            key: "redeemLink" as const,
+                            label: copy.redeemLink,
+                            value: itemRedeemLink || copy.taskCardLinkPending,
+                            copyValue: itemRedeemLink || "",
+                            mono: true,
+                          },
+                        ]
+                      : []),
+                  ];
 
                   return (
                     <div
@@ -2625,7 +2734,7 @@ export function ExchangeStudio() {
                         >
                           <div className="flex items-center justify-between gap-3">
                             <span className="text-sm font-semibold text-[var(--ink)]">
-                              #{item.id} {item.email}
+                              #{item.id}
                             </span>
                             <span className="sr-only">{itemTaskStatusLabel}</span>
                           </div>
@@ -2669,23 +2778,69 @@ export function ExchangeStudio() {
                         </div>
                       </div>
 
-                      {itemRedeemLink ? (
-                        <div className="px-3 pb-3">
-                          <div className="rounded-[0.95rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.05)] px-3 py-2.5">
-                            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
-                              {copy.redeemLink}
-                            </div>
-                            <a
-                              href={itemRedeemLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-2 block break-all font-mono text-xs leading-6 text-[var(--ink)] underline decoration-[rgba(18,92,95,0.28)] underline-offset-3"
+                      <div className="grid gap-2 px-3 pb-3">
+                        {itemFields.map((field) => {
+                          const canCopyField = Boolean(field.copyValue);
+                          const feedbackStatus =
+                            taskCardCopyFeedback?.taskId === item.id &&
+                            taskCardCopyFeedback.field === field.key
+                              ? taskCardCopyFeedback.status
+                              : null;
+                          const feedbackLabel = !canCopyField
+                            ? field.key === "redeemLink"
+                              ? copy.taskCardLinkPending
+                              : copy.taskCardValueMissing
+                            : feedbackStatus === "copied"
+                              ? copy.taskCardCopied
+                              : feedbackStatus === "failed"
+                                ? copy.taskCardCopyFailed
+                                : copy.taskCardCopyHint;
+
+                          return (
+                            <button
+                              key={`${item.id}-${field.key}`}
+                              type="button"
+                              onClick={() =>
+                                void handleCopyTaskCardField(item.id, field.key, field.copyValue)
+                              }
+                              disabled={!canCopyField}
+                              className={classNames(
+                                "rounded-[0.95rem] border px-3 py-2.5 text-left transition",
+                                canCopyField
+                                  ? "border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.05)] hover:bg-[rgba(18,92,95,0.08)]"
+                                  : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.38)] opacity-75"
+                              )}
                             >
-                              {itemRedeemLink}
-                            </a>
-                          </div>
-                        </div>
-                      ) : null}
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
+                                  {field.label}
+                                </div>
+                                <div
+                                  className={classNames(
+                                    "text-[0.68rem] font-semibold uppercase tracking-[0.14em]",
+                                    feedbackStatus === "copied"
+                                      ? "text-[var(--teal)]"
+                                      : feedbackStatus === "failed"
+                                        ? "text-[#973d2c]"
+                                        : "text-[var(--muted)]"
+                                  )}
+                                >
+                                  {feedbackLabel}
+                                </div>
+                              </div>
+                              <div
+                                className={classNames(
+                                  "mt-2 break-all text-sm leading-6 text-[var(--ink)]",
+                                  field.mono && "font-mono",
+                                  !canCopyField && "text-[var(--muted)]"
+                                )}
+                              >
+                                {field.value}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}
@@ -2719,85 +2874,6 @@ export function ExchangeStudio() {
                   </div>
                 ) : null}
               </div>
-
-              {showBusinessResultPanel ? (
-                <div className="surface-card grid gap-4 rounded-[1.5rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.78)] p-4">
-                  <div>
-                    <p className="section-kicker">{copy.step3}</p>
-                    <h3 className="text-xl font-semibold tracking-[-0.03em]">{copy.businessResult}</h3>
-                  </div>
-
-                  {task.status === "success" ? (
-                    <div className="grid gap-4">
-                      <div className="surface-soft rounded-[1.35rem] border border-[rgba(18,92,95,0.14)] bg-[linear-gradient(180deg,rgba(238,247,244,0.92),rgba(255,255,255,0.88))] p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
-                          {copy.extractResult}
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold tracking-[-0.03em]">
-                          {copy.extractReady}
-                        </div>
-                        <p className="mt-3 text-sm leading-7 text-[var(--muted)]">
-                          {copy.extractDescription}
-                        </p>
-                      </div>
-
-                      {successResultLink ? (
-                        <>
-                          <div className="surface-card rounded-[1.35rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(250,246,240,0.92)] p-4">
-                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                              {copy.redeemLink}
-                            </div>
-                            <div className="mt-3 break-all font-mono text-sm leading-7 text-[var(--ink)]">
-                              {successResultLink}
-                            </div>
-                          </div>
-
-                          <div className="flex flex-wrap gap-3">
-                            <button
-                              type="button"
-                              onClick={() => void handleCopySuccessLink()}
-                              className="theme-button-primary"
-                            >
-                              {copyFeedback === "copied" ? copy.linkCopied : copy.copyLink}
-                            </button>
-                            <a
-                              href={successResultLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="theme-button-secondary"
-                            >
-                              {copy.openLink}
-                            </a>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="notice notice-success">
-                          {copy.noLinkResult}
-                        </div>
-                      )}
-
-                      {copyFeedback === "failed" ? (
-                        <div className="notice notice-error">
-                          {copy.copyFailed}
-                        </div>
-                      ) : null}
-
-                    {task.cdk_charge_status === "pending" ? (
-                      <div className="notice notice-success">
-                        {copy.chargeSyncHint}
-                      </div>
-                    ) : null}
-
-                      {task.success_message && !successResultLink ? (
-                        <div className="notice notice-success">
-                          {copy.successResult}
-                          {task.success_message}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           ) : (
             <div className="empty-panel">
