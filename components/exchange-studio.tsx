@@ -736,7 +736,7 @@ function buildFallbackHistoryRawAccount(task: QueueTask) {
   return task.email ? `${task.email}` : `#${task.id}`;
 }
 
-function getQueueHistoryRedeemLink(task: QueueTask) {
+function getTaskRedeemLink(task: QueueTask) {
   const successMessage = task.success_message?.trim() || "";
   return task.status === "success" &&
     task.run_mode === "extract_link" &&
@@ -757,7 +757,7 @@ function buildQueueHistoryItemText(
     options?.prefixEnabled
       ? buildQueueHistoryCopyLine(item.raw_account, true, options.prefixValue || "")
       : item.raw_account.trim();
-  const redeemLink = getQueueHistoryRedeemLink(item.task);
+  const redeemLink = getTaskRedeemLink(item.task);
 
   if (!redeemLink) {
     return accountLine;
@@ -2229,10 +2229,7 @@ export function ExchangeStudio() {
     });
   };
 
-  const successResultLink =
-    task?.status === "success" && task.run_mode === "extract_link" && isHttpUrl(task.success_message)
-      ? task.success_message
-      : null;
+  const successResultLink = task ? getTaskRedeemLink(task) : null;
   const showBusinessResultPanel = task?.run_mode === "extract_link" && task.status === "success";
   const cdkSummaryText = detail
     ? isChinese
@@ -2599,6 +2596,7 @@ export function ExchangeStudio() {
                   const isSelected = item.id === task.id;
                   const isFailedItem = isFailedTaskStatus(item.status);
                   const canRetryItem = isFailedItem && retrySourceByTaskId.has(item.id);
+                  const itemRedeemLink = getTaskRedeemLink(item);
                   const itemTaskStatusLabel =
                     copy.taskStatuses[item.status as keyof typeof copy.taskStatuses] || item.status;
                   const itemChargeStatusLabel =
@@ -2625,28 +2623,28 @@ export function ExchangeStudio() {
                           onClick={() => setSelectedTaskId(item.id)}
                           className="min-w-0 flex-1 grid gap-1 text-left"
                         >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-semibold text-[var(--ink)]">
-                            #{item.id} {item.email}
-                          </span>
-                          <span className="sr-only">{itemTaskStatusLabel}</span>
-                        </div>
-                        <div className="text-xs text-[var(--muted)]">
-                          {copy.chargeStatusPrefix}
-                          {itemChargeStatusLabel}
-                        </div>
-                        {itemTaskError ? (
-                          <div className="text-xs leading-6 text-[#973d2c]">
-                            {copy.taskError}
-                            {itemTaskError}
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-semibold text-[var(--ink)]">
+                              #{item.id} {item.email}
+                            </span>
+                            <span className="sr-only">{itemTaskStatusLabel}</span>
                           </div>
-                        ) : null}
-                        {itemChargeError ? (
-                          <div className="text-xs leading-6 text-[#973d2c]">
-                            {copy.chargeError}
-                            {itemChargeError}
+                          <div className="text-xs text-[var(--muted)]">
+                            {copy.chargeStatusPrefix}
+                            {itemChargeStatusLabel}
                           </div>
-                        ) : null}
+                          {itemTaskError ? (
+                            <div className="text-xs leading-6 text-[#973d2c]">
+                              {copy.taskError}
+                              {itemTaskError}
+                            </div>
+                          ) : null}
+                          {itemChargeError ? (
+                            <div className="text-xs leading-6 text-[#973d2c]">
+                              {copy.chargeError}
+                              {itemChargeError}
+                            </div>
+                          ) : null}
                         </button>
 
                         <div className="flex shrink-0 items-start gap-2">
@@ -2670,6 +2668,24 @@ export function ExchangeStudio() {
                           </span>
                         </div>
                       </div>
+
+                      {itemRedeemLink ? (
+                        <div className="px-3 pb-3">
+                          <div className="rounded-[0.95rem] border border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.05)] px-3 py-2.5">
+                            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
+                              {copy.redeemLink}
+                            </div>
+                            <a
+                              href={itemRedeemLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-2 block break-all font-mono text-xs leading-6 text-[var(--ink)] underline decoration-[rgba(18,92,95,0.28)] underline-offset-3"
+                            >
+                              {itemRedeemLink}
+                            </a>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}

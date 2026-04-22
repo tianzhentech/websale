@@ -494,7 +494,12 @@ function resolveActivityDateKey(task: QueueTask) {
 }
 
 function resolveActivityTimelineTimestamp(task: QueueTask) {
-  if (task.status === "success" || task.status === "failed" || task.status === "cancelled") {
+  if (
+    task.status === "success"
+    || task.status === "failed"
+    || task.status === "refunded"
+    || task.status === "cancelled"
+  ) {
     return (
       timestampMs(task.finished_at) ??
       timestampMs(task.updated_at) ??
@@ -532,10 +537,10 @@ function resolveActivityCellTone(task: QueueTask): OverviewActivityCellTone {
   if (task.status === "success") {
     return "success";
   }
-  if (task.status === "queued") {
+  if (task.status === "queued" || task.status === "pending") {
     return "queued";
   }
-  if (task.status === "running") {
+  if (task.status === "running" || task.status === "processing") {
     return "running";
   }
   return "failure";
@@ -575,13 +580,13 @@ function buildOverviewActivity(tasks: QueueTask[], windowMinutes: number): Overv
     day.cells.push(resolveActivityCell(task));
     if (task.status === "success") {
       day.success += 1;
-    } else if (task.status === "failed") {
+    } else if (task.status === "failed" || task.status === "refunded") {
       day.failed += 1;
     } else if (task.status === "cancelled") {
       day.cancelled += 1;
-    } else if (task.status === "running") {
+    } else if (task.status === "running" || task.status === "processing") {
       day.running += 1;
-    } else if (task.status === "queued") {
+    } else if (task.status === "queued" || task.status === "pending") {
       day.queued += 1;
     } else {
       day.failed += 1;
