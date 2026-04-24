@@ -220,7 +220,8 @@ const QUEUE_HISTORY_TWOFA_PREFIX_STORAGE_KEY = "pixel-websale-queue-history-twof
 const MAX_ENQUEUE_HISTORY_RECORDS = 48;
 const BULK_TEXT_PLACEHOLDER = "demo.user@example.com---Passw0rd!---JBSWY3DPEHPK3PXP";
 const DEFAULT_QUEUE_HISTORY_TWOFA_PREFIX = "https://2fa.run/2fa/";
-const TASK_LIST_PAGE_SIZE = 5;
+const DEFAULT_TASK_LIST_PAGE_SIZE = 5;
+const EXTRACT_LINK_TASK_LIST_PAGE_SIZE = 1;
 const transactionGridTemplate =
   "minmax(10rem,1.7fr) minmax(8rem,1.1fr) minmax(4.5rem,0.7fr) minmax(5.5rem,0.9fr) minmax(4.5rem,0.8fr) minmax(4.5rem,0.8fr) minmax(16rem,4fr)";
 
@@ -1247,11 +1248,15 @@ export function ExchangeStudio() {
     }
     return taskList[0] ?? null;
   }, [selectedTaskId, taskList]);
-  const totalTaskPages = Math.max(1, Math.ceil(taskList.length / TASK_LIST_PAGE_SIZE));
+  const taskListPageSize =
+    taskList[0]?.run_mode === "extract_link"
+      ? EXTRACT_LINK_TASK_LIST_PAGE_SIZE
+      : DEFAULT_TASK_LIST_PAGE_SIZE;
+  const totalTaskPages = Math.max(1, Math.ceil(taskList.length / taskListPageSize));
   const paginatedTaskList = useMemo(() => {
-    const pageStart = (currentTaskPage - 1) * TASK_LIST_PAGE_SIZE;
-    return taskList.slice(pageStart, pageStart + TASK_LIST_PAGE_SIZE);
-  }, [currentTaskPage, taskList]);
+    const pageStart = (currentTaskPage - 1) * taskListPageSize;
+    return taskList.slice(pageStart, pageStart + taskListPageSize);
+  }, [currentTaskPage, taskList, taskListPageSize]);
   const selectedQueueHistory = useMemo(() => {
     if (!enqueueHistory.length) {
       return null;
@@ -1420,9 +1425,9 @@ export function ExchangeStudio() {
       return;
     }
 
-    const selectedPage = Math.floor(selectedIndex / TASK_LIST_PAGE_SIZE) + 1;
+    const selectedPage = Math.floor(selectedIndex / taskListPageSize) + 1;
     setCurrentTaskPage((currentPage) => (currentPage === selectedPage ? currentPage : selectedPage));
-  }, [selectedTaskId, taskList]);
+  }, [selectedTaskId, taskList, taskListPageSize]);
 
   useEffect(() => {
     if (!hasLoadedStoredCode) {
@@ -1799,7 +1804,7 @@ export function ExchangeStudio() {
 
   const handleTaskPageChange = (nextPage: number) => {
     const normalizedPage = Math.min(Math.max(1, nextPage), totalTaskPages);
-    const pageStart = (normalizedPage - 1) * TASK_LIST_PAGE_SIZE;
+    const pageStart = (normalizedPage - 1) * taskListPageSize;
     const nextSelectedTask = taskList[pageStart] ?? null;
 
     setCurrentTaskPage(normalizedPage);
