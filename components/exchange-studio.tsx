@@ -2813,7 +2813,7 @@ export function ExchangeStudio() {
                                 "rounded-[0.95rem] border px-3 py-2.5 text-left transition",
                                 canCopyField
                                   ? "border-[rgba(18,92,95,0.14)] bg-[rgba(18,92,95,0.05)] hover:bg-[rgba(18,92,95,0.08)]"
-                                  : "border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.38)] opacity-75"
+                                  : "border-[var(--surface-border)] bg-[var(--surface-subtle-bg)] opacity-75"
                               )}
                             >
                               <div className="flex items-center justify-between gap-3">
