@@ -2562,9 +2562,7 @@ export function ExchangeStudio() {
             {runModes.map((mode) => {
               const modeEnabled = mode.enabled !== false;
               const disabled = !modeEnabled || !detail?.can_exchange || !mode.affordable || isPending;
-              const description = modeEnabled
-                ? copy.runModeDescriptions[mode.run_mode]
-                : copy.modeMaintenanceHint;
+              const description = modeEnabled ? copy.runModeDescriptions[mode.run_mode] : "";
 
               return (
                 <article
@@ -2588,7 +2586,9 @@ export function ExchangeStudio() {
                           </span>
                         ) : null}
                       </div>
-                      <p className="text-sm leading-6 text-[var(--muted)]">{description}</p>
+                      {description ? (
+                        <p className="text-sm leading-6 text-[var(--muted)]">{description}</p>
+                      ) : null}
                     </div>
                     <div className="text-right">
                       <div className="text-[2.4rem] font-semibold leading-none tracking-[-0.05em] text-[var(--accent-deep)]">
