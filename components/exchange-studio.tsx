@@ -890,8 +890,9 @@ function buildLookupSuccessText(task: QueueTask, copy: ExchangeStudioCopy) {
 }
 
 function buildLookupFailureText(item: TaskEmailLookupItem, copy: ExchangeStudioCopy) {
+  const accountLine = item.task ? buildLookupAccountLine(item.task) || item.email : item.email;
   if (!item.task) {
-    return `${item.email}\n${copy.taskLookupFailureReasonLine.replace("{reason}", copy.taskLookupNoRecord)}`;
+    return `${accountLine}\n${copy.taskLookupFailureReasonLine.replace("{reason}", copy.taskLookupNoRecord)}`;
   }
 
   const reason =
@@ -903,7 +904,7 @@ function buildLookupFailureText(item: TaskEmailLookupItem, copy: ExchangeStudioC
     );
 
   return [
-    buildLookupAccountLine(item.task) || item.email,
+    accountLine,
     copy.taskLookupFailureReasonLine.replace("{reason}", reason),
   ].join("\n");
 }
@@ -3155,8 +3156,14 @@ function TaskLookupDialog({
 
   const successItems = results.filter((item) => item.task?.status === "success");
   const failedItems = results.filter((item) => item.task?.status !== "success");
-  const handleCopyColumn = async (column: "success" | "failed", textItems: Array<{ text: string }>) => {
-    const text = textItems.map((item) => item.text.trim()).filter(Boolean).join("\n\n");
+  const handleCopyColumn = async (
+    column: "success" | "failed",
+    textItems: Array<{ text: string; copyText?: string }>
+  ) => {
+    const text = textItems
+      .map((item) => (item.copyText || item.text).trim())
+      .filter(Boolean)
+      .join("\n");
     if (!text) {
       return;
     }
@@ -3178,6 +3185,7 @@ function TaskLookupDialog({
   const failedTextItems = failedItems.map((item) => ({
     key: item.email,
     text: buildLookupFailureText(item, copy),
+    copyText: item.task ? buildLookupAccountLine(item.task) || item.email : item.email,
   }));
 
   return (
