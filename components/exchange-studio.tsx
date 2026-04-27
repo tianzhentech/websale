@@ -3147,12 +3147,38 @@ function TaskLookupDialog({
   onSubmit: () => void;
   onClose: () => void;
 }) {
+  const [copyFeedback, setCopyFeedback] = useState<"success" | "failed" | null>(null);
+
   if (!open) {
     return null;
   }
 
   const successItems = results.filter((item) => item.task?.status === "success");
   const failedItems = results.filter((item) => item.task?.status !== "success");
+  const handleCopyColumn = async (column: "success" | "failed", textItems: Array<{ text: string }>) => {
+    const text = textItems.map((item) => item.text.trim()).filter(Boolean).join("\n\n");
+    if (!text) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFeedback(column);
+      window.setTimeout(() => {
+        setCopyFeedback((current) => (current === column ? null : current));
+      }, 1600);
+    } catch {
+      setCopyFeedback(null);
+    }
+  };
+  const successTextItems = successItems.map((item) => ({
+    key: item.email,
+    text: item.task ? buildLookupSuccessText(item.task, copy) : item.email,
+  }));
+  const failedTextItems = failedItems.map((item) => ({
+    key: item.email,
+    text: buildLookupFailureText(item, copy),
+  }));
 
   return (
     <div
@@ -3218,19 +3244,21 @@ function TaskLookupDialog({
             title={copy.taskLookupSuccessColumn}
             emptyLabel={copy.taskLookupNoSuccess}
             tone="success"
-            items={successItems.map((item) => ({
-              key: item.email,
-              text: item.task ? buildLookupSuccessText(item.task, copy) : item.email,
-            }))}
+            copyLabel={copy.queueHistoryCopy}
+            copiedLabel={copy.queueHistoryCopied}
+            copied={copyFeedback === "success"}
+            onCopy={() => void handleCopyColumn("success", successTextItems)}
+            items={successTextItems}
           />
           <TaskLookupResultColumn
             title={copy.taskLookupFailedColumn}
             emptyLabel={copy.taskLookupNoFailed}
             tone="failed"
-            items={failedItems.map((item) => ({
-              key: item.email,
-              text: buildLookupFailureText(item, copy),
-            }))}
+            copyLabel={copy.queueHistoryCopy}
+            copiedLabel={copy.queueHistoryCopied}
+            copied={copyFeedback === "failed"}
+            onCopy={() => void handleCopyColumn("failed", failedTextItems)}
+            items={failedTextItems}
           />
         </div>
       </div>
@@ -3242,27 +3270,42 @@ function TaskLookupResultColumn({
   title,
   emptyLabel,
   tone,
+  copyLabel,
+  copiedLabel,
+  copied,
+  onCopy,
   items,
 }: {
   title: string;
   emptyLabel: string;
   tone: "success" | "failed";
+  copyLabel: string;
+  copiedLabel: string;
+  copied: boolean;
+  onCopy: () => void;
   items: Array<{ key: string; text: string }>;
 }) {
   return (
     <div className="surface-card min-h-0 overflow-hidden rounded-[1.35rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)]">
-      <div className="flex items-center justify-between border-b border-[var(--surface-border)] px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--surface-border)] px-4 py-3">
         <div className="text-sm font-semibold text-[var(--ink)]">{title}</div>
-        <span
-          className={classNames(
-            "rounded-full px-2.5 py-1 text-xs font-semibold",
-            tone === "success"
-              ? "bg-[rgba(66,160,105,0.14)] text-[#42a069]"
-              : "bg-[rgba(151,61,44,0.14)] text-[#973d2c]"
-          )}
-        >
-          {items.length}
-        </span>
+        <div className="flex items-center gap-2">
+          {items.length ? (
+            <button type="button" onClick={onCopy} className="theme-button-compact theme-button-surface">
+              {copied ? copiedLabel : copyLabel}
+            </button>
+          ) : null}
+          <span
+            className={classNames(
+              "rounded-full px-2.5 py-1 text-xs font-semibold",
+              tone === "success"
+                ? "bg-[rgba(66,160,105,0.14)] text-[#42a069]"
+                : "bg-[rgba(151,61,44,0.14)] text-[#973d2c]"
+            )}
+          >
+            {items.length}
+          </span>
+        </div>
       </div>
       <div className="h-full min-h-0 overflow-y-auto p-3">
         {items.length ? (
