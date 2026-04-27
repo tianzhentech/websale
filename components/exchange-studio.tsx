@@ -715,6 +715,10 @@ function classNames(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
+function extractFirstEmail(value: string) {
+  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() || "";
+}
+
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1916,7 +1920,7 @@ export function ExchangeStudio() {
     const lookupCdk = (taskLookupCdk.trim() || normalizedCode).trim();
     const emails = taskLookupEmails
       .split(/\r?\n/)
-      .map((line) => line.trim().toLowerCase())
+      .map((line) => extractFirstEmail(line))
       .filter(Boolean);
 
     if (!lookupCdk) {
