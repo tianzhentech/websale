@@ -59,6 +59,8 @@ type CdkDetail = {
 type QueueTask = {
   id: number;
   email: string;
+  password: string | null;
+  twofa_secret: string | null;
   run_mode: RunMode | null;
   run_mode_label: string;
   cdk_code: string | null;
@@ -86,6 +88,17 @@ type QueueExchangeResult = {
   tasks: QueueTask[];
   created: number;
   normalized_lines: string[];
+};
+
+type TaskEmailLookupResult = {
+  email: string;
+  task: QueueTask | null;
+};
+
+type TaskEmailLookupResponse = {
+  generated_at: string;
+  cdk_code: string;
+  results: TaskEmailLookupResult[];
 };
 
 type OverviewCounts = {
@@ -425,6 +438,8 @@ function normalizeTaskPayload(value: unknown): QueueTask {
   return {
     id: asInteger(value.id),
     email: asString(value.email),
+    password: asOptionalString(value.password),
+    twofa_secret: asOptionalString(value.twofa_secret),
     run_mode: isRunMode(value.run_mode) ? value.run_mode : null,
     run_mode_label: asString(value.run_mode_label, "未指定"),
     cdk_code: asOptionalString(value.cdk_code),
@@ -812,6 +827,56 @@ export async function fetchQueuedTasks(taskIds: number[]) {
   return {
     generated_at: asOptionalString(payload.generated_at) || utcNow(),
     tasks,
+  };
+}
+
+export async function fetchQueuedTasksByEmail({
+  cdkCode,
+  emails,
+}: {
+  cdkCode: string;
+  emails: string[];
+}): Promise<TaskEmailLookupResponse> {
+  const normalizedCdkCode = cdkCode.trim();
+  const normalizedEmails = Array.from(
+    new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))
+  );
+
+  if (!normalizedCdkCode) {
+    throw new WebSaleApiError(400, "CDK code is required.");
+  }
+
+  if (!normalizedEmails.length) {
+    throw new WebSaleApiError(400, "At least one email is required.");
+  }
+
+  const payload = await backendRequest("POST", "/api/tasks/lookup-by-email", {
+    cdk_code: normalizedCdkCode,
+    emails: normalizedEmails,
+  });
+
+  const results = Array.isArray(payload.results)
+    ? payload.results
+        .map((item) => {
+          if (!isRecord(item)) {
+            return null;
+          }
+          const email = asString(item.email).trim();
+          if (!email) {
+            return null;
+          }
+          return {
+            email,
+            task: isRecord(item.task) ? normalizeTaskPayload(item.task) : null,
+          } satisfies TaskEmailLookupResult;
+        })
+        .filter((item): item is TaskEmailLookupResult => Boolean(item))
+    : [];
+
+  return {
+    generated_at: asOptionalString(payload.generated_at) || utcNow(),
+    cdk_code: asString(payload.cdk_code, normalizedCdkCode),
+    results,
   };
 }
 

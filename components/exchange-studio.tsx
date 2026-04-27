@@ -68,6 +68,8 @@ type PreviewResponse = {
 type QueueTask = {
   id: number;
   email: string;
+  password?: string | null;
+  twofa_secret?: string | null;
   run_mode: RunMode | null;
   run_mode_label: string;
   cdk_code?: string | null;
@@ -105,6 +107,17 @@ type TaskStatusResponse = {
 type TaskLookupResponse = {
   generated_at?: string;
   tasks: QueueTask[];
+};
+
+type TaskEmailLookupItem = {
+  email: string;
+  task: QueueTask | null;
+};
+
+type TaskEmailLookupResponse = {
+  generated_at?: string;
+  cdk_code: string;
+  results: TaskEmailLookupItem[];
 };
 
 type TaskStreamResponse = {
@@ -251,6 +264,25 @@ const LANGUAGE_COPY = {
     checkingCdkHint: "正在自动检测 CDK 的有效性和余额...",
     cdkHint: "输入 CDK 后会自动校验有效性和当前余额。",
     viewCdkDetail: "查看 CDK 明细",
+    taskLookup: "任务查询",
+    taskLookupTitle: "任务查询",
+    taskLookupDescription: "使用当前卡密校验任务归属。每行输入 1 个提交时的邮箱。",
+    taskLookupCdkLabel: "查询卡密",
+    taskLookupEmailLabel: "提交邮箱",
+    taskLookupEmailPlaceholder: "user1@example.com\nuser2@example.com",
+    taskLookupSubmit: "查询",
+    taskLookupRunning: "查询中...",
+    taskLookupMissingCdk: "请先输入卡密再查询任务。",
+    taskLookupMissingEmail: "请输入至少 1 个提交时的邮箱。",
+    taskLookupFailed: "任务查询失败。",
+    taskLookupSuccessColumn: "成功",
+    taskLookupFailedColumn: "失败 / 未完成",
+    taskLookupNoSuccess: "暂无成功结果。",
+    taskLookupNoFailed: "暂无失败或未完成结果。",
+    taskLookupNoRecord: "未找到此卡密下对应邮箱的任务记录。",
+    taskLookupPendingReason: "任务尚未成功，当前状态：{status}",
+    taskLookupSubscriptionResultLine: "订阅结果：{result}",
+    taskLookupFailureReasonLine: "失败原因：{reason}",
     singleEntry: "单个录入",
     bulkEntry: "批量录入",
     email: "邮箱",
@@ -456,6 +488,25 @@ const LANGUAGE_COPY = {
     checkingCdkHint: "Checking CDK validity and balance automatically...",
     cdkHint: "Enter a CDK and the system will validate its availability and balance automatically.",
     viewCdkDetail: "View CDK Details",
+    taskLookup: "Task Lookup",
+    taskLookupTitle: "Task Lookup",
+    taskLookupDescription: "Use the current CDK to verify task ownership. Enter one submitted email per line.",
+    taskLookupCdkLabel: "Lookup CDK",
+    taskLookupEmailLabel: "Submitted Emails",
+    taskLookupEmailPlaceholder: "user1@example.com\nuser2@example.com",
+    taskLookupSubmit: "Lookup",
+    taskLookupRunning: "Looking up...",
+    taskLookupMissingCdk: "Please enter a CDK before looking up tasks.",
+    taskLookupMissingEmail: "Please enter at least one submitted email.",
+    taskLookupFailed: "Task lookup failed.",
+    taskLookupSuccessColumn: "Success",
+    taskLookupFailedColumn: "Failed / Pending",
+    taskLookupNoSuccess: "No successful results yet.",
+    taskLookupNoFailed: "No failed or pending results.",
+    taskLookupNoRecord: "No task record was found for this CDK and email.",
+    taskLookupPendingReason: "The task has not succeeded yet. Current status: {status}",
+    taskLookupSubscriptionResultLine: "Subscription Result: {result}",
+    taskLookupFailureReasonLine: "Failure Reason: {reason}",
     singleEntry: "Single Entry",
     bulkEntry: "Bulk Entry",
     email: "Email",
@@ -750,8 +801,8 @@ function buildTaskAccountSnapshot(task: QueueTask, rawAccountLine?: string | nul
 
   return {
     email: task.email || "",
-    password: null,
-    twofaSecret: null,
+    password: task.password || null,
+    twofaSecret: task.twofa_secret || null,
   };
 }
 
@@ -811,6 +862,46 @@ function buildQueueHistoryItemText(
   return [accountLine, copy.queueHistoryRedeemLinkLine.replace("{link}", redeemLink)]
     .filter(Boolean)
     .join("\n");
+}
+
+function buildLookupAccountLine(task: QueueTask) {
+  const snapshot = buildTaskAccountSnapshot(task);
+  return [snapshot.email || task.email, snapshot.password, snapshot.twofaSecret]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join("---");
+}
+
+function buildLookupSuccessText(task: QueueTask, copy: ExchangeStudioCopy) {
+  const accountLine = buildLookupAccountLine(task) || task.email;
+  const redeemLink = getTaskRedeemLink(task);
+  if (redeemLink) {
+    return [accountLine, copy.queueHistoryRedeemLinkLine.replace("{link}", redeemLink)].join("\n");
+  }
+
+  const result = task.success_message?.trim() || copy.genericSuccessResult;
+  return [
+    accountLine,
+    copy.taskLookupSubscriptionResultLine.replace("{result}", result),
+  ].join("\n");
+}
+
+function buildLookupFailureText(item: TaskEmailLookupItem, copy: ExchangeStudioCopy) {
+  if (!item.task) {
+    return `${item.email}\n${copy.taskLookupFailureReasonLine.replace("{reason}", copy.taskLookupNoRecord)}`;
+  }
+
+  const reason =
+    item.task.error_message?.trim() ||
+    item.task.cdk_charge_error?.trim() ||
+    copy.taskLookupPendingReason.replace(
+      "{status}",
+      getTaskStatusLabel(copy, item.task.status)
+    );
+
+  return [
+    buildLookupAccountLine(item.task) || item.email,
+    copy.taskLookupFailureReasonLine.replace("{reason}", reason),
+  ].join("\n");
 }
 
 function createHistoryRecordId() {
@@ -1200,7 +1291,13 @@ export function ExchangeStudio() {
   const [isCdkChecking, setIsCdkChecking] = useState(false);
   const [cdkValidationError, setCdkValidationError] = useState<string | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [isTaskLookupOpen, setIsTaskLookupOpen] = useState(false);
   const [isBulkEditorOpen, setIsBulkEditorOpen] = useState(false);
+  const [taskLookupCdk, setTaskLookupCdk] = useState("");
+  const [taskLookupEmails, setTaskLookupEmails] = useState("");
+  const [taskLookupResults, setTaskLookupResults] = useState<TaskEmailLookupItem[]>([]);
+  const [taskLookupError, setTaskLookupError] = useState<string | null>(null);
+  const [isTaskLookupLoading, setIsTaskLookupLoading] = useState(false);
   const [isBulkFormatting, setIsBulkFormatting] = useState(false);
   const [bulkFormatMessage, setBulkFormatMessage] = useState<string | null>(null);
   const [bulkFormatError, setBulkFormatError] = useState<string | null>(null);
@@ -1757,7 +1854,11 @@ export function ExchangeStudio() {
   }, [accountMode]);
 
   const hasModalOpen =
-    isDetailDialogOpen || isBulkEditorOpen || isQueueHistoryOpen || retryConfirmation !== null;
+    isDetailDialogOpen ||
+    isTaskLookupOpen ||
+    isBulkEditorOpen ||
+    isQueueHistoryOpen ||
+    retryConfirmation !== null;
 
   useEffect(() => {
     if (!hasModalOpen) {
@@ -1772,6 +1873,7 @@ export function ExchangeStudio() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsDetailDialogOpen(false);
+        setIsTaskLookupOpen(false);
         setIsBulkEditorOpen(false);
         setIsQueueHistoryOpen(false);
         setRetryConfirmation(null);
@@ -1802,6 +1904,45 @@ export function ExchangeStudio() {
     setError(null);
     setIsDetailDialogOpen(false);
     setIsBulkEditorOpen(false);
+  };
+
+  const openTaskLookup = () => {
+    setTaskLookupCdk(normalizedCode);
+    setTaskLookupError(null);
+    setIsTaskLookupOpen(true);
+  };
+
+  const handleTaskLookupSubmit = async () => {
+    const lookupCdk = (taskLookupCdk.trim() || normalizedCode).trim();
+    const emails = taskLookupEmails
+      .split(/\r?\n/)
+      .map((line) => line.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (!lookupCdk) {
+      setTaskLookupError(copy.taskLookupMissingCdk);
+      return;
+    }
+    if (!emails.length) {
+      setTaskLookupError(copy.taskLookupMissingEmail);
+      return;
+    }
+
+    setTaskLookupCdk(lookupCdk);
+    setTaskLookupError(null);
+    setIsTaskLookupLoading(true);
+
+    try {
+      const response = await request<TaskEmailLookupResponse>("/api/tasks/lookup-by-email", {
+        method: "POST",
+        body: JSON.stringify({ cdk_code: lookupCdk, emails }),
+      });
+      setTaskLookupResults(response.results);
+    } catch (nextError) {
+      setTaskLookupError(nextError instanceof Error ? nextError.message : copy.taskLookupFailed);
+    } finally {
+      setIsTaskLookupLoading(false);
+    }
   };
 
   const handleTaskPageChange = (nextPage: number) => {
@@ -2378,6 +2519,13 @@ export function ExchangeStudio() {
               <p className="section-kicker">{copy.step1}</p>
               <h2 className="section-title">{copy.title}</h2>
             </div>
+            <button
+              type="button"
+              onClick={openTaskLookup}
+              className="theme-button-surface"
+            >
+              {copy.taskLookup}
+            </button>
           </div>
 
           <div className="grid gap-3">
@@ -2896,6 +3044,19 @@ export function ExchangeStudio() {
         open={isDetailDialogOpen}
         onClose={() => setIsDetailDialogOpen(false)}
       />
+      <TaskLookupDialog
+        open={isTaskLookupOpen}
+        copy={copy}
+        cdkValue={taskLookupCdk}
+        emailValue={taskLookupEmails}
+        results={taskLookupResults}
+        error={taskLookupError}
+        isLoading={isTaskLookupLoading}
+        onCdkChange={setTaskLookupCdk}
+        onEmailChange={setTaskLookupEmails}
+        onSubmit={handleTaskLookupSubmit}
+        onClose={() => setIsTaskLookupOpen(false)}
+      />
       <BulkTextEditorDialog
         value={bulkText}
         open={isBulkEditorOpen}
@@ -2952,6 +3113,168 @@ function MetricCard({
         className={classNames("mt-3 text-base font-semibold leading-7", mono && "font-mono break-all")}
       >
         {value}
+      </div>
+    </div>
+  );
+}
+
+function TaskLookupDialog({
+  open,
+  copy,
+  cdkValue,
+  emailValue,
+  results,
+  error,
+  isLoading,
+  onCdkChange,
+  onEmailChange,
+  onSubmit,
+  onClose,
+}: {
+  open: boolean;
+  copy: ExchangeStudioCopy;
+  cdkValue: string;
+  emailValue: string;
+  results: TaskEmailLookupItem[];
+  error: string | null;
+  isLoading: boolean;
+  onCdkChange: (value: string) => void;
+  onEmailChange: (value: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  const successItems = results.filter((item) => item.task?.status === "success");
+  const failedItems = results.filter((item) => item.task?.status !== "success");
+
+  return (
+    <div
+      className="modal-overlay-enter fixed inset-0 z-50 overflow-hidden overscroll-none bg-[rgba(29,34,29,0.48)] p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="panel modal-panel-enter mx-auto flex h-[calc(100dvh-2rem)] max-h-[56rem] w-full max-w-6xl min-h-0 flex-col gap-4 overflow-hidden p-5 md:p-6"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="section-kicker">{copy.taskKicker}</p>
+            <h2 className="section-title">{copy.taskLookupTitle}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-7 text-[var(--muted)]">
+              {copy.taskLookupDescription}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="theme-button-surface">
+            {copy.close}
+          </button>
+        </div>
+
+        <div className="grid shrink-0 gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <label className="grid gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+              {copy.taskLookupCdkLabel}
+            </span>
+            <input
+              value={cdkValue}
+              onChange={(event) => onCdkChange(event.target.value)}
+              placeholder={copy.cdkPlaceholder}
+              className="rounded-[1.1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+              {copy.taskLookupEmailLabel}
+            </span>
+            <textarea
+              value={emailValue}
+              onChange={(event) => onEmailChange(event.target.value)}
+              placeholder={copy.taskLookupEmailPlaceholder}
+              className="min-h-[7.5rem] resize-y rounded-[1.1rem] border border-[rgba(31,35,28,0.12)] bg-[rgba(255,255,255,0.82)] px-4 py-3 font-mono text-sm leading-6 outline-none transition focus:border-[rgba(18,92,95,0.28)] focus:ring-4 focus:ring-[rgba(18,92,95,0.12)]"
+            />
+          </label>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+          <div className="min-h-6 text-sm leading-6 text-[#973d2c]">{error || ""}</div>
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={isLoading}
+            className={classNames(isLoading ? "theme-button-disabled" : "theme-button-primary")}
+          >
+            {isLoading ? copy.taskLookupRunning : copy.taskLookupSubmit}
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
+          <TaskLookupResultColumn
+            title={copy.taskLookupSuccessColumn}
+            emptyLabel={copy.taskLookupNoSuccess}
+            tone="success"
+            items={successItems.map((item) => ({
+              key: item.email,
+              text: item.task ? buildLookupSuccessText(item.task, copy) : item.email,
+            }))}
+          />
+          <TaskLookupResultColumn
+            title={copy.taskLookupFailedColumn}
+            emptyLabel={copy.taskLookupNoFailed}
+            tone="failed"
+            items={failedItems.map((item) => ({
+              key: item.email,
+              text: buildLookupFailureText(item, copy),
+            }))}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TaskLookupResultColumn({
+  title,
+  emptyLabel,
+  tone,
+  items,
+}: {
+  title: string;
+  emptyLabel: string;
+  tone: "success" | "failed";
+  items: Array<{ key: string; text: string }>;
+}) {
+  return (
+    <div className="surface-card min-h-0 overflow-hidden rounded-[1.35rem] border border-[rgba(31,35,28,0.08)] bg-[rgba(255,255,255,0.72)]">
+      <div className="flex items-center justify-between border-b border-[var(--surface-border)] px-4 py-3">
+        <div className="text-sm font-semibold text-[var(--ink)]">{title}</div>
+        <span
+          className={classNames(
+            "rounded-full px-2.5 py-1 text-xs font-semibold",
+            tone === "success"
+              ? "bg-[rgba(66,160,105,0.14)] text-[#42a069]"
+              : "bg-[rgba(151,61,44,0.14)] text-[#973d2c]"
+          )}
+        >
+          {items.length}
+        </span>
+      </div>
+      <div className="h-full min-h-0 overflow-y-auto p-3">
+        {items.length ? (
+          <div className="grid gap-3 pb-12">
+            {items.map((item, index) => (
+              <pre
+                key={`${item.key}-${index}`}
+                className="surface-subtle whitespace-pre-wrap break-all rounded-[1rem] border border-[var(--surface-border)] p-3 font-mono text-sm leading-6 text-[var(--ink)]"
+              >
+                {item.text}
+              </pre>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-panel min-h-[12rem]">{emptyLabel}</div>
+        )}
       </div>
     </div>
   );
