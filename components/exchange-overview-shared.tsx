@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Language } from "@/lib/ui-language";
 
-type ActiveActivityTone = "success" | "failure" | "queued" | "running";
+type ActiveActivityTone = "success" | "failure" | "rejected" | "queued" | "running";
 type EmptyActivityTone = "empty";
 type ActivityTone = ActiveActivityTone | EmptyActivityTone;
 
@@ -26,6 +26,7 @@ type OverviewActivityDay = {
   running?: number;
   success?: number;
   failed?: number;
+  rejected?: number;
   cancelled?: number;
   total?: number;
   cells?: OverviewActivityCell[];
@@ -37,6 +38,7 @@ type NormalizedOverviewActivityDay = {
   running: number;
   success: number;
   failed: number;
+  rejected: number;
   cancelled: number;
   total: number;
   cells: ActiveActivityCell[];
@@ -49,6 +51,7 @@ type OverviewResponse = {
     tasks_running?: number;
     tasks_success?: number;
     tasks_failed?: number;
+    tasks_rejected?: number;
   };
   activity?: {
     window_minutes?: number;
@@ -58,6 +61,7 @@ type OverviewResponse = {
       running?: number;
       success?: number;
       failed?: number;
+      rejected?: number;
       cancelled?: number;
       total?: number;
     };
@@ -69,6 +73,7 @@ export type OverviewActivityTotals = {
   running: number;
   success: number;
   failed: number;
+  rejected: number;
   cancelled: number;
   total: number;
 };
@@ -80,8 +85,10 @@ type OverviewCopy = {
   queuedTasks: string;
   successTasks: string;
   failedTasks: string;
+  rejectedTasks: string;
   successLegend: string;
   failureLegend: string;
+  rejectedLegend: string;
   runningLegend: string;
   queuedLegend: string;
   queueTaskLabel: string;
@@ -97,6 +104,7 @@ export type ExchangeOverviewSnapshot = {
     queued: number;
     success: number;
     failed: number;
+    rejected: number;
   };
   activityTotals: OverviewActivityTotals;
   activityWindowMinutes: number;
@@ -120,6 +128,7 @@ function isActiveActivityTone(value: unknown): value is ActiveActivityTone {
   return (
     value === "success" ||
     value === "failure" ||
+    value === "rejected" ||
     value === "queued" ||
     value === "running"
   );
@@ -148,6 +157,7 @@ function normalizeActivityDay(day: OverviewActivityDay): NormalizedOverviewActiv
     running: asCount(day.running),
     success: asCount(day.success),
     failed: asCount(day.failed),
+    rejected: asCount(day.rejected),
     cancelled: asCount(day.cancelled),
     total: asCount(day.total),
     cells: Array.isArray(day.cells)
@@ -164,6 +174,9 @@ export function resolveToneColor(tone: ActivityTone) {
   }
   if (tone === "failure") {
     return "var(--activity-failure-3)";
+  }
+  if (tone === "rejected") {
+    return "var(--activity-rejected-3)";
   }
   if (tone === "queued") {
     return "var(--activity-queued-3)";
@@ -237,6 +250,7 @@ function buildTodayCells(
   orderedCells: ActiveActivityCell[],
   successCount: number,
   failureCount: number,
+  rejectedCount: number,
   queuedCount: number,
   runningCount: number,
   slotCount: number
@@ -247,6 +261,7 @@ function buildTodayCells(
       : [
           ...Array.from({ length: successCount }, () => ({ taskId: null, tone: "success" as const })),
           ...Array.from({ length: failureCount }, () => ({ taskId: null, tone: "failure" as const })),
+          ...Array.from({ length: rejectedCount }, () => ({ taskId: null, tone: "rejected" as const })),
           ...Array.from({ length: queuedCount }, () => ({ taskId: null, tone: "queued" as const })),
           ...Array.from({ length: runningCount }, () => ({ taskId: null, tone: "running" as const })),
         ];
@@ -290,8 +305,10 @@ function getOverviewCopy(language: Language): OverviewCopy {
       queuedTasks: "排队任务",
       successTasks: "成功任务",
       failedTasks: "失败任务",
+      rejectedTasks: "被拒任务",
       successLegend: "成功",
       failureLegend: "失败",
+      rejectedLegend: "被拒",
       runningLegend: "处理中",
       queuedLegend: "排队中",
       queueTaskLabel: "队列任务",
@@ -307,8 +324,10 @@ function getOverviewCopy(language: Language): OverviewCopy {
     queuedTasks: "Queued Tasks",
     successTasks: "Successful Tasks",
     failedTasks: "Failed Tasks",
+    rejectedTasks: "Rejected Tasks",
     successLegend: "Success",
     failureLegend: "Failure",
+    rejectedLegend: "Rejected",
     runningLegend: "Running",
     queuedLegend: "Queued",
     queueTaskLabel: "Task",
@@ -376,6 +395,7 @@ export function useExchangeOverviewSnapshot(language: Language): ExchangeOvervie
     running: asCount(overview?.activity?.totals?.running),
     success: asCount(overview?.activity?.totals?.success),
     failed: asCount(overview?.activity?.totals?.failed),
+    rejected: asCount(overview?.activity?.totals?.rejected),
     cancelled: asCount(overview?.activity?.totals?.cancelled),
     total: asCount(overview?.activity?.totals?.total),
   };
@@ -388,6 +408,7 @@ export function useExchangeOverviewSnapshot(language: Language): ExchangeOvervie
       queued: activityTotals.queued,
       success: activityTotals.success,
       failed: activityTotals.failed + activityTotals.cancelled,
+      rejected: activityTotals.rejected,
     },
     activityTotals,
     activityWindowMinutes,
@@ -490,6 +511,7 @@ export function OverviewActivityCard({
     windowCells,
     activityTotals.success,
     failureCount,
+    activityTotals.rejected,
     activityTotals.queued,
     activityTotals.running,
     heatmapColumns * rows
@@ -541,6 +563,7 @@ export function OverviewActivityCard({
           {[
             { tone: "success" as const, label: copy.successLegend, value: taskCounts.success },
             { tone: "failure" as const, label: copy.failureLegend, value: taskCounts.failed },
+            { tone: "rejected" as const, label: copy.rejectedLegend, value: taskCounts.rejected },
             { tone: "running" as const, label: copy.runningLegend, value: taskCounts.running },
             { tone: "queued" as const, label: copy.queuedLegend, value: taskCounts.queued },
           ].map((legend) => (

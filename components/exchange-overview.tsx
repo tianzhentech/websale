@@ -24,11 +24,15 @@ export function ExchangeOverview() {
       label: snapshot.copy.failedTasks,
       value: snapshot.taskCounts.failed,
     },
+    {
+      label: snapshot.copy.rejectedTasks,
+      value: snapshot.taskCounts.rejected,
+    },
   ];
 
   return (
     <div className="grid w-full gap-3 p-3">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {items.map((item) => (
           <article
             key={item.label}

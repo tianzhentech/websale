@@ -93,6 +93,7 @@ type OverviewCounts = {
   tasks_running: number;
   tasks_success: number;
   tasks_failed: number;
+  tasks_rejected: number;
 };
 
 type OverviewActivityDay = {
@@ -101,6 +102,7 @@ type OverviewActivityDay = {
   running: number;
   success: number;
   failed: number;
+  rejected: number;
   cancelled: number;
   total: number;
   cells: OverviewActivityCell[];
@@ -114,12 +116,13 @@ type OverviewActivity = {
     running: number;
     success: number;
     failed: number;
+    rejected: number;
     cancelled: number;
     total: number;
   };
 };
 
-type OverviewActivityCellTone = "success" | "failure" | "queued" | "running";
+type OverviewActivityCellTone = "success" | "failure" | "rejected" | "queued" | "running";
 
 type OverviewActivityCell = {
   task_id: number;
@@ -401,6 +404,7 @@ function normalizeOverviewCounts(value: unknown): OverviewCounts {
       tasks_running: 0,
       tasks_success: 0,
       tasks_failed: 0,
+      tasks_rejected: 0,
     };
   }
 
@@ -409,6 +413,7 @@ function normalizeOverviewCounts(value: unknown): OverviewCounts {
     tasks_running: asInteger(value.tasks_running),
     tasks_success: asInteger(value.tasks_success),
     tasks_failed: asInteger(value.tasks_failed),
+    tasks_rejected: asInteger(value.tasks_rejected),
   };
 }
 
@@ -478,6 +483,7 @@ function emptyOverviewActivityDay(date: string): OverviewActivityDay {
     running: 0,
     success: 0,
     failed: 0,
+    rejected: 0,
     cancelled: 0,
     total: 0,
     cells: [],
@@ -497,6 +503,7 @@ function resolveActivityTimelineTimestamp(task: QueueTask) {
   if (
     task.status === "success"
     || task.status === "failed"
+    || task.status === "rejected"
     || task.status === "refunded"
     || task.status === "cancelled"
   ) {
@@ -543,6 +550,9 @@ function resolveActivityCellTone(task: QueueTask): OverviewActivityCellTone {
   if (task.status === "running" || task.status === "processing") {
     return "running";
   }
+  if (task.status === "rejected") {
+    return "rejected";
+  }
   return "failure";
 }
 
@@ -582,6 +592,8 @@ function buildOverviewActivity(tasks: QueueTask[], windowMinutes: number): Overv
       day.success += 1;
     } else if (task.status === "failed" || task.status === "refunded") {
       day.failed += 1;
+    } else if (task.status === "rejected") {
+      day.rejected += 1;
     } else if (task.status === "cancelled") {
       day.cancelled += 1;
     } else if (task.status === "running" || task.status === "processing") {
@@ -600,6 +612,7 @@ function buildOverviewActivity(tasks: QueueTask[], windowMinutes: number): Overv
       running: summary.running + day.running,
       success: summary.success + day.success,
       failed: summary.failed + day.failed,
+      rejected: summary.rejected + day.rejected,
       cancelled: summary.cancelled + day.cancelled,
       total: summary.total + day.total,
     }),
@@ -608,6 +621,7 @@ function buildOverviewActivity(tasks: QueueTask[], windowMinutes: number): Overv
       running: 0,
       success: 0,
       failed: 0,
+      rejected: 0,
       cancelled: 0,
       total: 0,
     }

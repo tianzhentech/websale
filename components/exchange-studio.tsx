@@ -406,6 +406,7 @@ const LANGUAGE_COPY = {
       running: "运行中",
       success: "已成功",
       failed: "失败",
+      rejected: "被拒绝",
       cancelled: "已取消",
     },
     chargeStatuses: {
@@ -610,6 +611,7 @@ const LANGUAGE_COPY = {
       running: "Running",
       success: "Success",
       failed: "Failed",
+      rejected: "Rejected",
       cancelled: "Cancelled",
     },
     chargeStatuses: {
